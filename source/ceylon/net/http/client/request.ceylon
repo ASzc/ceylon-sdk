@@ -9,7 +9,8 @@ import ceylon.net.http {
     getMethod=get
 }
 import ceylon.net.uri {
-    Uri
+    Uri,
+    parse
 }
 
 FileDescriptor send(SocketAddress|FileDescriptor target, Message request) {
@@ -29,12 +30,21 @@ Message receive(FileDescriptor incoming) {
     return nothing;
 }
 
-Message request(Method method, Uri uri) {
-    assert (exists String scheme = uri.scheme, scheme in ["http", "https"]);
-    assert (exists String host = uri.authority.host);
+Message request(Method method, Uri|String uri) {
+    Uri parsedUri;
+    switch (uri)
+    case (is Uri) {
+        parsedUri = uri;
+    }
+    case (is String) {
+        parsedUri = parse(uri);
+    }
+    
+    assert (exists String scheme = parsedUri.scheme, scheme in ["http", "https"]);
+    assert (exists String host = parsedUri.authority.host);
     
     Integer port;
-    if (exists p = uri.authority.port) {
+    if (exists p = parsedUri.authority.port) {
         port = p;
     } else if (scheme == "http") {
         port = 80;
@@ -51,11 +61,11 @@ Message request(Method method, Uri uri) {
     return receive(incoming);
 }
 
-Message get(Uri uri) {
+Message get(Uri|String uri) {
     return request(getMethod, uri);
 }
 
-{Message+} getFollowingRedirects(Uri uri) {
+{Message+} getFollowingRedirects(Uri|String uri) {
     //return request(getMethod, uri);
     return nothing; // TODO
 }

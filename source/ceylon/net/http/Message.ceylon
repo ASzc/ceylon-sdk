@@ -51,4 +51,5 @@ class Request() {
 
 class Response() {
     shared Integer code = nothing;
+    // TODO include redirect Response history here?
 }
