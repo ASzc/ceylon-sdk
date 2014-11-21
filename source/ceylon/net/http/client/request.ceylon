@@ -1,5 +1,8 @@
+import ceylon.collection {
+    unmodifiableMap,
+    HashMap
+}
 import ceylon.io {
-    SocketAddress,
     FileDescriptor,
     Socket
 }
@@ -13,24 +16,61 @@ import ceylon.net.uri {
     parse
 }
 
-FileDescriptor send(SocketAddress|FileDescriptor target, Message request) {
-    switch (target)
-    case (is FileDescriptor) {
-        
-        return target;
-    }
-    case (is SocketAddress) {
-        Socket socket = nothing;
-        
-        return socket;
-    }
+void send(FileDescriptor reciever, Message outgoing) {
 }
 
-Message receive(FileDescriptor incoming) {
-    return nothing;
+Message receive(FileDescriptor sender) {
+    Message incoming = nothing;
+    
+    return incoming;
 }
 
-Message request(Method method, Uri|String uri) {
+PoolManager defaultPoolManager = PoolManager();
+
+shared class UnknownSchemePortException(scheme, cause = null)
+        extends Exception("The default port for '``scheme``' is not known.", cause) {
+    shared String scheme;
+    Throwable? cause;
+}
+
+shared class MissingHostException(uri, cause = null)
+        extends Exception("The URI '``uri``' is missing a host.", cause) {
+    shared Uri uri;
+    Throwable? cause;
+}
+
+shared class MissingSchemeException(uri, cause = null)
+        extends Exception("The URI '``uri``' is missing a scheme.", cause) {
+    shared Uri uri;
+    Throwable? cause;
+}
+
+Map<String,Integer> createDefaultSchemePorts() {
+    value map = HashMap<String,Integer> {
+        entries = ["http"->80, "https"->443];
+    };
+    return unmodifiableMap(map);
+}
+shared Map<String,Integer> defaultSchemePorts = createDefaultSchemePorts();
+
+throws (`class UnknownSchemePortException`, "When the [[uri]] doesn't specify a
+                                             port value, and the [[uri]] scheme
+                                             is not in [[defaultSchemePorts]]")
+throws (`class MissingSchemeException`, "When the parsed [[uri]] lacks a scheme
+                                         definition.")
+throws (`class MissingHostException`, "When the parsed [[uri]] lacks a host
+                                       definition.")
+Message request(method, uri, poolManager = defaultPoolManager, schemePorts = defaultSchemePorts) {
+    "HTTP method to use for the request."
+    Method method;
+    "URI to use. The scheme must be supported by [[poolManager]] and in
+     [[defaultSchemePorts]] if [[uri]] doesn't specify a port value."
+    Uri|String uri;
+    "Used to get the [[Socket]] required for the request."
+    PoolManager poolManager;
+    "Default ports for schemes. Used when [[uri]] doesn't specify a port value."
+    Map<String,Integer> schemePorts;
+    
     Uri parsedUri;
     switch (uri)
     case (is Uri) {
@@ -40,28 +80,40 @@ Message request(Method method, Uri|String uri) {
         parsedUri = parse(uri);
     }
     
-    assert (exists String scheme = parsedUri.scheme, scheme in ["http", "https"]);
-    assert (exists String host = parsedUri.authority.host);
-    
-    Integer port;
-    if (exists p = parsedUri.authority.port) {
-        port = p;
-    } else if (scheme == "http") {
-        port = 80;
-    } else { // if (scheme == "https")
-        port = 443;
-        // TODO "secure" Boolean?
+    if (exists String host = parsedUri.authority.host) {
+        if (exists String scheme = parsedUri.scheme) {
+            Integer port;
+            if (exists p = parsedUri.authority.port) {
+                port = p;
+            } else if (exists p = schemePorts[scheme]) {
+                port = p;
+            } else {
+                throw UnknownSchemePortException(scheme);
+            }
+            
+            Pool pool = poolManager.poolFor(scheme, host, port);
+            // TODO lease socket from pool
+            Socket socket = nothing;
+            
+            value request = Message(nothing);
+            send(socket, request);
+            Message response = receive(socket);
+            
+            // TODO return lease to pool
+            // TODO how to handle a streaming response body? Would have to return the lease later after it is done being read.
+            
+            return response;
+        } else {
+            throw MissingSchemeException(parsedUri);
+        }
+    } else {
+        throw MissingHostException(parsedUri);
     }
-    
-    value socketAddress = SocketAddress(host, port);
-    
-    value request = Message(nothing);
-    
-    FileDescriptor incoming = send(socketAddress, request);
-    return receive(incoming);
 }
 
-Message get(Uri|String uri) {
+// TODO change return to Message subtype Response, offer followRedirect param, store any redirects in attribute of Response
+Message get(uri) {
+    Uri|String uri;
     return request(getMethod, uri);
 }
 
