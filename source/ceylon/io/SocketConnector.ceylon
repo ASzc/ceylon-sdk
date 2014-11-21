@@ -12,7 +12,7 @@ import ceylon.io.impl {
    invoked when the socket is connected."
 by("Stéphane Épardaud")
 see(`function newSocketConnector`)
-shared sealed interface SocketConnector{
+shared interface SocketConnector{
     
     "Block the current thread until a connected [[Socket]] 
      is returned."
@@ -37,7 +37,7 @@ shared sealed interface SocketConnector{
  - use [[connectAsync]] to register a listener that will be 
    invoked when the socket is connected."
 see(`function newSslSocketConnector`)
-shared sealed interface SslSocketConnector 
+shared interface SslSocketConnector 
         satisfies SocketConnector {
     shared formal actual SslSocket connect();
 }
