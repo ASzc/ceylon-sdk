@@ -10,7 +10,7 @@ import ceylon.io.charset {
 
 "Represents an HTTP Message"
 by ("Alex Szczuczko")
-shared class Message(String|ByteBuffer initBodyThing) {
+shared class Message(String|ByteBuffer initBodyThing) { // TODO accept body as sequence for chunked encoding?
     shared String topLine = nothing; // TODO type?
     
     shared String version => nothing;
