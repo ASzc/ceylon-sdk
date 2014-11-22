@@ -1,6 +1,5 @@
 import ceylon.collection {
     LinkedList,
-    Stack,
     HashMap,
     unmodifiableMap
 }
@@ -63,11 +62,14 @@ shared class PoolManager(maximumPools = 5,
             value key = [scheme, host, port];
             Pool? pool = pools.get(key);
             if (exists pool) {
-                // TODO update LRU Socket
+                // Use HashMap's linked ordering to keep track of LRU (as Least Recently Added)
+                // A plain put won't update the linked ordering
+                pools.remove(key);
+                pools.put(key, pool);
                 return pool;
             } else {
-                if (pools.size >= maximumPools) {
-                    // TODO close+remove LRU Socket
+                if (pools.size >= maximumPools, exists first = pools.first) {
+                    pools.remove(first.key);
                 }
                 value connectorCreator = connectors.get(scheme);
                 if (exists connectorCreator) {
@@ -94,7 +96,7 @@ shared class PoolManager(maximumPools = 5,
     shared void close() {
         try {
             poolsLock.lock();
-            for (Pool pool in pools.items) {
+            for (pool in pools.items) {
                 pool.close();
             }
             pools.clear();
@@ -102,6 +104,11 @@ shared class PoolManager(maximumPools = 5,
             poolsLock.unlock();
         }
     }
+}
+
+shared class PoolExhaustedException(cause = null)
+        extends Exception("All sockets are leased", cause) {
+    Throwable? cause;
 }
 
 "A pool of Sockets created using a constant [[SocketAddress]] and
@@ -120,24 +127,77 @@ shared class Pool(connectorCreator, target, maximumConnections = 5, soft = true)
      [[soft]] is true."
     shared Integer maximumConnections;
     "If true, create a temporary connection instead of throwing an exception
-     when [[activeConnections]] equals [[maximumConnections]] and a connection
-     lease is requested. This temporary connection will be discarded instead of
-     being returned to the pool when the lease is returned."
+     when [[idleConnections]] is zero, [[leasedConnections]] equals
+     [[maximumConnections]] and a connection lease is requested. This temporary
+     connection will be discarded instead of being returned to the pool when
+     the lease is returned."
     shared Boolean soft;
     
     SocketConnector connector = connectorCreator(target);
     
     ReentrantLock connnectionsLock = ReentrantLock();
     
-    Stack<Socket> activeConnections = LinkedList<Socket>(); // TODO required, or implicit in leases?
-    Stack<Socket> idleConnections = LinkedList<Socket>();
+    variable Boolean closed = false;
+    LinkedList<Socket> leasedConnections = LinkedList<Socket>();
+    LinkedList<Socket> idleConnections = LinkedList<Socket>();
     
-    // TODO
+    "Lease a [[Socket]] from the pool. You must call [[yield]] with the same
+     socket when you are finished with it."
+    shared Socket borrow() {
+        try {
+            connnectionsLock.lock();
+            if (exists top = idleConnections.pop()) {
+                leasedConnections.push(top);
+                return top;
+            } else if (leasedConnections.size < maximumConnections) {
+                // ^^ In this condition, idleConnections is known to be of zero
+                // size because it has no top.
+                Socket socket = connector.connect();
+                leasedConnections.push(socket);
+                return socket;
+            } else if (soft) {
+                return connector.connect();
+            } else {
+                throw PoolExhaustedException();
+            }
+        } finally {
+            connnectionsLock.unlock();
+        }
+    }
+    
+    "Return a [[borrowed]] [[Socket]] to the pool.
+     
+     If [[close]] was called previously, or if the socket is temporary (see
+     [[soft]]) the socket will be closed instead."
+    shared void yield(Socket borrowed) {
+        try {
+            connnectionsLock.lock();
+            if (closed) {
+                borrowed.close();
+            } else {
+                Boolean wasLeased = leasedConnections.removeFirst(borrowed);
+                if (wasLeased) {
+                    idleConnections.push(borrowed);
+                } else {
+                    borrowed.close();
+                }
+            }
+        } finally {
+            connnectionsLock.unlock();
+        }
+    }
     
     "Close all sockets in the pool. Sockets with active leases will be closed
      when their lease is returned, other sockets will be closed immediately."
     shared void close() {
-        Socket x = nothing;
-        // TODO
+        try {
+            connnectionsLock.lock();
+            for (socket in idleConnections) {
+                socket.close();
+            }
+            closed = true;
+        } finally {
+            connnectionsLock.unlock();
+        }
     }
 }
