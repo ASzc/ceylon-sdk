@@ -52,10 +52,8 @@ Map<String,Integer> createDefaultSchemePorts() {
 }
 shared Map<String,Integer> defaultSchemePorts = createDefaultSchemePorts();
 
-PoolManager defaultPoolManager = PoolManager();
-
 "For sending HTTP messages to servers and receiving replies."
-shared class Client(poolManager = defaultPoolManager, schemePorts = defaultSchemePorts) {
+shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePorts) {
     "Used to get the [[Socket]]s required for the requests."
     PoolManager poolManager;
     "Default ports for schemes. Used when a request URI doesn't specify a port value."
