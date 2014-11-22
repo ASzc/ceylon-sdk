@@ -142,14 +142,17 @@ shared class Pool(connectorCreator, target, maximumConnections = 5, soft = true)
     LinkedList<Socket> idleConnections = LinkedList<Socket>();
     
     "Lease a [[Socket]] from the pool. You must call [[yield]] with the same
-     socket when you are finished with it."
+     socket when you are finished with it.
+     
+     If [[close]] was called previously, only temporary connections may be
+     created, and only if [[soft]] is true."
     shared Socket borrow() {
         try {
             connnectionsLock.lock();
             if (exists top = idleConnections.pop()) {
                 leasedConnections.push(top);
                 return top;
-            } else if (leasedConnections.size < maximumConnections) {
+            } else if (!closed && leasedConnections.size < maximumConnections) {
                 // ^^ In this condition, idleConnections is known to be of zero
                 // size because it has no top.
                 Socket socket = connector.connect();
@@ -173,6 +176,7 @@ shared class Pool(connectorCreator, target, maximumConnections = 5, soft = true)
         try {
             connnectionsLock.lock();
             if (closed) {
+                leasedConnections.remove(borrowed);
                 borrowed.close();
             } else {
                 Boolean wasLeased = leasedConnections.removeFirst(borrowed);
@@ -195,6 +199,7 @@ shared class Pool(connectorCreator, target, maximumConnections = 5, soft = true)
             for (socket in idleConnections) {
                 socket.close();
             }
+            idleConnections.clear();
             closed = true;
         } finally {
             connnectionsLock.unlock();
