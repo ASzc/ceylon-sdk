@@ -9,7 +9,8 @@ import ceylon.io {
 import ceylon.net.http {
     Message,
     Method,
-    getMethod=get
+    getMethod=get,
+    postMethod=post
 }
 import ceylon.net.uri {
     Uri,
@@ -24,8 +25,6 @@ Message receive(FileDescriptor sender) {
     
     return incoming;
 }
-
-PoolManager defaultPoolManager = PoolManager();
 
 shared class UnknownSchemePortException(scheme, cause = null)
         extends Exception("The default port for '``scheme``' is not known.", cause) {
@@ -52,6 +51,8 @@ Map<String,Integer> createDefaultSchemePorts() {
     return unmodifiableMap(map);
 }
 shared Map<String,Integer> defaultSchemePorts = createDefaultSchemePorts();
+
+PoolManager defaultPoolManager = PoolManager();
 
 throws (`class UnknownSchemePortException`, "When the [[uri]] doesn't specify a
                                              port value, and the [[uri]] scheme
@@ -92,14 +93,13 @@ Message request(method, uri, poolManager = defaultPoolManager, schemePorts = def
             }
             
             Pool pool = poolManager.poolFor(scheme, host, port);
-            // TODO lease socket from pool
-            Socket socket = nothing;
+            Socket socket = pool.borrow();
             
             value request = Message(nothing);
             send(socket, request);
             Message response = receive(socket);
             
-            // TODO return lease to pool
+            pool.yield(socket);
             // TODO how to handle a streaming response body? Would have to return the lease later after it is done being read.
             
             return response;
@@ -110,6 +110,24 @@ Message request(method, uri, poolManager = defaultPoolManager, schemePorts = def
         throw MissingHostException(parsedUri);
     }
 }
+
+shared class Client(poolManager = defaultPoolManager, schemePorts = defaultSchemePorts) {
+    "Used to get the [[Socket]]s required for the requests."
+    PoolManager poolManager;
+    "Default ports for schemes. Used when a request URI doesn't specify a port value."
+    shared Map<String,Integer> schemePorts;
+    
+    shared Message post(uri) {
+        Uri|String uri;
+        return nothing;
+    }
+    
+    // TODO move request into this class
+}
+
+Client defaultClient = Client();
+
+Message post(Uri|String uri) => defaultClient.post(uri);
 
 // TODO change return to Message subtype Response, offer followRedirect param, store any redirects in attribute of Response
 Message get(uri) {
