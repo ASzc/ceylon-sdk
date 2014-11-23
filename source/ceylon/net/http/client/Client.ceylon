@@ -6,18 +6,44 @@ import ceylon.io {
     FileDescriptor,
     Socket
 }
+import ceylon.io.buffer {
+    ByteBuffer
+}
+import ceylon.io.charset {
+    Charset,
+    utf8
+}
 import ceylon.net.http {
     Message,
     Method,
     getMethod=get,
-    postMethod=post
+    Header
 }
 import ceylon.net.uri {
     Uri,
-    parse
+    parse,
+    Parameter
 }
 
-void send(FileDescriptor reciever, Message outgoing) {
+void send(reciever,
+    method,
+    uri,
+    parameters = empty,
+    headers = empty,
+    data = null,
+    maxRedirects = 10) {
+    FileDescriptor reciever;
+    Method method;
+    "URI to apply. Only the host, path and query portions will be used."
+    Uri|String uri;
+    {Parameter*} parameters;
+    {Header*} headers;
+    ByteBuffer|String? data;
+    Integer maxRedirects;
+    
+    // TODO
+    
+    //reciever.write(buffer);
 }
 
 Message receive(FileDescriptor sender) {
@@ -25,6 +51,8 @@ Message receive(FileDescriptor sender) {
     
     return incoming;
 }
+
+// TODO add superclass to group these exceptions
 
 shared class UnknownSchemePortException(scheme, cause = null)
         extends Exception("The default port for '``scheme``' is not known.", cause) {
@@ -72,14 +100,60 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                                              definition.")
     throws (`class MissingHostException`, "When the parsed [[uri]] lacks a host
                                            definition.")
-    shared Message request(method, uri, followRedirects = true) {
+    shared Message request(method,
+        uri,
+        parameters = empty,
+        headers = empty,
+        data = null,
+        maxRedirects = 10) {
         "HTTP method to use for the request."
         Method method;
         "URI to use. The scheme must be supported by [[poolManager]] and in
          [[defaultSchemePorts]] if [[uri]] doesn't specify a port value."
         Uri|String uri;
-        Boolean followRedirects;
-        // TODO argument ideas: parameters, data, dataContentType, bodyCharset, headers, lazy, authentication
+        {Parameter*} parameters;
+        "Headers to include with the request. They will be encoded with
+         [[utf8]], which degrades to ASCII. Note that some servers may only
+         accept ASCII header characters, so be cautious when including unicode
+         characters. Header keys are case insensitive (`Host` == `host`).
+         
+         These default headers will be provided if you do not specify a value
+         for them:
+         - `Host` = the host part of the [[uri]]
+         - `Accept` = `*/*`
+         - `Accept-Charset` = `UTF-8`
+         - `User-Agent` = `Ceylon/1.2`
+         
+         The `Content-Type` header may be set/manipulated in certain scenarios:
+         - if [[parameters]] is not [[empty]], and [[method]] is [[post]], the
+         type name will be set to `application/x-www-form-urlencoded`.
+         - if the header is not present, and [[data]] is a [[ByteBuffer]], the
+         type name will be set to `application/octet-stream`.
+         - if the header is not present, and [[data]] is a [[String]], the type
+         name will be set to `text/plain`.
+         - if the header is present, and the type name isn't
+         `application/octet-stream`, and the header's value parameter `charset`
+         is not set, it will be set to `UTF-8`.
+         
+         The `charset` parameter of the `Content-Type` header will be parsed
+         and used to encode the message body (only if there is one, see
+         [[data]]). Its value must be one of the supported
+         [[ceylon.io.charset::charsets]]."
+        {Header*} headers;
+        "Data to include in the request body. Usually this is [[null]] for
+         idempotent methods (GET, HEAD, etc.), but it does not have to be.
+         
+         If [[parameters]] is not empty, and [[method]] is [[post]], then the
+         parameters will be used instead of this value. String values will be
+         encoded with the charset parameter of the `Content-Type` header, see
+         [[headers]]."
+        ByteBuffer|String? data;
+        "If the response status code is in the [300 series]
+         (https://en.wikipedia.org/wiki/List_of_HTTP_status_codes#3xx_Redirection)
+         then the redirect(s) will be followed up to the depth specified here.
+         To disable redirect following, set this to 0."
+        Integer maxRedirects;
+        // TODO argument ideas: lazy (relating to response body reading), authentication, timeouts
         
         Uri parsedUri;
         switch (uri)
@@ -104,8 +178,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                 Pool pool = poolManager.poolFor(scheme, host, port);
                 Socket socket = pool.borrow();
                 
-                value request = Message(nothing);
-                send(socket, request);
+                send(socket, method, uri, parameters, headers, data, maxRedirects);
                 Message response = receive(socket);
                 
                 // TODO process redirects if flag is true
