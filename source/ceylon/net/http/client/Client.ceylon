@@ -26,31 +26,131 @@ import ceylon.net.uri {
     Parameter
 }
 
+shared String terminator = "\r\n";
+
+shared void externaliseParameters(StringBuilder builder, {Parameter*} parameters) {
+    variable Boolean addPrefix = false;
+    for (parameter in parameters) {
+        if (addPrefix) {
+            builder.append("&");
+        }
+        addPrefix = true;
+        builder.append(parameter.toRepresentation(false));
+    }
+}
+
 shared void send(reciever,
     method,
     uri,
     parameters = empty,
     headers = empty,
-    data = null,
-    maxRedirects = 10) {
+    data = null) {
     FileDescriptor reciever;
     Method method;
     "URI to apply. Only the host, path and query portions will be used."
-    Uri|String uri;
+    Uri uri;
     {Parameter*} parameters;
     {Header*} headers;
     FileDescriptor|ByteBuffer|String? data;
-    Integer maxRedirects;
     
-    if (is FileDescriptor data) {
-    } else if (is ByteBuffer data) {
-    } else if (is String data) {
+    // message prefix
+    value builder = StringBuilder();
+    
+    // method
+    builder.append(method.string)
+        .append(" ");
+    
+    // path
+    String path = uri.pathPart;
+    if (path.empty) {
+        builder.append("/");
     } else {
+        builder.append(path);
+    }
+    Boolean queryParamsAdded;
+    if (exists query = uri.queryPart) {
+        builder.append("?")
+            .append(query);
+        queryParamsAdded = true;
+    } else {
+        queryParamsAdded = false;
+    }
+    if (!parameters.empty && method == get) {
+        if (!queryParamsAdded) {
+            builder.append("?");
+        } else {
+            builder.append("&");
+        }
+        externaliseParameters(builder, parameters);
     }
     
-    // TODO
+    // version
+    builder.append(" ")
+        .append("HTTP/1.1")
+        .append(terminator);
     
-    //reciever.write(buffer);
+    // add content type header
+    //if (exists contentTypeValue, !getHeader("Content-Type") exists) {
+    //    headers.add(contentType(contentTypeValue, bodyCharset));
+    //}
+    // add length header
+    //if (bodySize != 0 && !getHeader("Content-Length") exists) {
+    //    headers.add(contentLength(bodySize.string));
+    //}
+    Integer? bodySize;
+    if (is FileDescriptor data) {
+        bodySize = null;
+    } else if (is ByteBuffer data) {
+        bodySize = data.available;
+    } else if (is String data) {
+        bodySize = data.size;
+    } else {
+        bodySize = 0;
+    }
+    
+    // headers
+    Charset bodyCharset = nothing;
+    // TODO defaults
+    // TODO make sure Content-Type is handled as documented, extract/default the charset from the value
+    // TODO drop Content-Length if FileDescriptor data, otherwise include with bodySize if exists
+    // TODO the "values" for header looks like it needs to be rewritten, there's only one value, and only one header with a case-insensitive name (?)
+    for (header in headers) {
+        for (val in header.values) {
+            builder.append(header.name)
+                .append(": ")
+                .append(val)
+                .append(terminator);
+        }
+    }
+    builder.append(terminator);
+    
+    // Write the header early so that any socket issues are thrown before we touch the body.
+    reciever.writeFully(utf8.encode(builder.string));
+    
+    if (!parameters.empty && method == post) {
+        value paramBuilder = StringBuilder();
+        externaliseParameters(paramBuilder, parameters);
+        reciever.writeFully(bodyCharset.encode(paramBuilder.string));
+    } else if (is String s = data) {
+        reciever.writeFully(bodyCharset.encode(s));
+    } else if (is ByteBuffer b = data) {
+        reciever.writeFully(b);
+    } else if (is FileDescriptor f = data) {
+        // Transfer-Encoding: chunked header should already be set
+        f.readFully(void(ByteBuffer buffer) {
+                Integer length = buffer.available;
+                // Can't be zero length, as that is specified as the terminating chunk
+                if (length > 0) {
+                    String lengthHex = formatInteger(length, 16);
+                    reciever.writeFully(utf8.encode(lengthHex + terminator));
+                    reciever.writeFully(buffer);
+                    reciever.writeFully(utf8.encode(terminator));
+                }
+            });
+        // Terminating zero-length chunk
+        reciever.writeFully(utf8.encode("0" + terminator + terminator));
+    }
+    // else null: write nothing
 }
 
 shared Message receive(FileDescriptor sender) {
@@ -192,7 +292,9 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                 Pool pool = poolManager.poolFor(scheme, host, port);
                 Socket socket = pool.borrow();
                 
-                send(socket, method, uri, parameters, headers, data, maxRedirects);
+                // TODO try/catch for write issues? Proably only way to reliably detect if the socket is still open?
+                // TODO ^^^^ would have to add something to the Pool class to expire a socket and get a new lease?
+                send(socket, method, parsedUri, parameters, headers, data);
                 Message response = receive(socket);
                 
                 // TODO process redirects if flag is true
@@ -210,15 +312,30 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
         }
     }
     
-    shared Message get(uri, followRedirects = true) {
+    shared Message get(uri,
+        parameters = empty,
+        headers = empty,
+        data = null,
+        maxRedirects = 10) {
         Uri|String uri;
-        Boolean followRedirects;
-        return request(getMethod, uri, followRedirects);
+        {Parameter*} parameters;
+        {Header*} headers;
+        FileDescriptor|ByteBuffer|String? data;
+        Integer maxRedirects;
+        return request(getMethod, uri, parameters, headers, data, maxRedirects);
     }
     
-    shared Message post(uri) {
+    shared Message post(uri,
+        parameters = empty,
+        headers = empty,
+        data = null,
+        maxRedirects = 10) {
         Uri|String uri;
-        return nothing;
+        {Parameter*} parameters;
+        {Header*} headers;
+        FileDescriptor|ByteBuffer|String? data;
+        Integer maxRedirects;
+        return request(postMethod, uri, parameters, headers, data, maxRedirects);
     }
     
     // TODO ...
@@ -227,6 +344,6 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
 Client defaultClient = Client();
 
 // TODO update param lists
-shared Message get(Uri|String uri) => defaultClient.get(uri);
+shared Message(Uri|String, {Parameter*}, {Header*}, FileDescriptor|ByteBuffer|String?, Integer) get = defaultClient.get;
 shared Message post(Uri|String uri) => defaultClient.post(uri);
 // TODO ...

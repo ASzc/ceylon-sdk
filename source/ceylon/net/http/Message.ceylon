@@ -49,6 +49,8 @@ class Request() {
     shared Method method = nothing;
 }
 
+
+// TODO respose(/message?) body as either bytebuffer or if request was "lazy", filedescriptor?
 class Response() {
     shared Integer code = nothing;
     // TODO include redirect Response history here?
