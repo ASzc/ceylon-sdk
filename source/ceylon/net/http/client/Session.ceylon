@@ -1,5 +1,5 @@
 "A [[Client]] with limited persistence between requests."
-class Session(poolManager = defaultPoolManager, schemePorts = defaultSchemePorts)
+class Session(poolManager = PoolManager(), schemePorts = defaultSchemePorts)
         extends Client(poolManager, schemePorts) {
     "Used to get the sockets required for the requests."
     PoolManager poolManager;
