@@ -26,7 +26,7 @@ import ceylon.net.uri {
     Parameter
 }
 
-void send(reciever,
+shared void send(reciever,
     method,
     uri,
     parameters = empty,
@@ -39,15 +39,21 @@ void send(reciever,
     Uri|String uri;
     {Parameter*} parameters;
     {Header*} headers;
-    ByteBuffer|String? data;
+    FileDescriptor|ByteBuffer|String? data;
     Integer maxRedirects;
+    
+    if (is FileDescriptor data) {
+    } else if (is ByteBuffer data) {
+    } else if (is String data) {
+    } else {
+    }
     
     // TODO
     
     //reciever.write(buffer);
 }
 
-Message receive(FileDescriptor sender) {
+shared Message receive(FileDescriptor sender) {
     Message incoming = nothing;
     
     return incoming;
@@ -131,8 +137,9 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
          The `Content-Type` header may be set/manipulated in certain scenarios:
          - if [[parameters]] is not [[empty]], and [[method]] is post, the type
          name will be set to `application/x-www-form-urlencoded`.
-         - if the header is not present, and [[data]] is a [[ByteBuffer]], the
-         type name will be set to `application/octet-stream`.
+         - if the header is not present, and [[data]] is a [[ByteBuffer]] or
+         [[FileDescriptor]], the type name will be set to
+         `application/octet-stream`.
          - if the header is not present, and [[data]] is a [[String]], the type
          name will be set to `text/plain`.
          - if the header is present, and the type name isn't
@@ -148,10 +155,13 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
          idempotent methods (GET, HEAD, etc.), but it does not have to be.
          
          If [[parameters]] is not empty, and [[method]] is post, then the
-         parameters will be used instead of this value. String values will be
-         encoded with the charset parameter of the `Content-Type` header, see
-         [[headers]]."
-        ByteBuffer|String? data;
+         parameters will be used instead of this value. [[String]] values will
+         be encoded with the charset parameter of the `Content-Type` header,
+         see [[headers]].
+         
+         [[FileDescriptor]]s will be read in manageable pieces and sent using
+         chunked transfer encoding."
+        FileDescriptor|ByteBuffer|String? data;
         "If the response status code is in the [300 series]
          (https://en.wikipedia.org/wiki/List_of_HTTP_status_codes#3xx_Redirection)
          then the redirect(s) will be followed up to the depth specified here.
