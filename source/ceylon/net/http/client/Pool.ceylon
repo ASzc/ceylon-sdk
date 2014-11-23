@@ -191,6 +191,20 @@ shared class Pool(connectorCreator, target, maximumConnections = 5, soft = true)
         }
     }
     
+    "Basically the only reliable way to detect if a TCP connection is dead is
+     to attempt to use it. This method allows you to return a [[borrowed]]
+     [[Socket]] if it doesn't work. A replacement [[Socket]] will be returned."
+    shared Socket exchange(Socket borrowed) {
+        try {
+            connnectionsLock.lock();
+            borrowed.close();
+            leasedConnections.remove(borrowed);
+            return borrow();
+        } finally {
+            connnectionsLock.unlock();
+        }
+    }
+    
     "Close all sockets in the pool. Sockets with active leases will be closed
      when their lease is returned, other sockets will be closed immediately."
     shared void close() {

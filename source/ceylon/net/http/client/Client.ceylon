@@ -25,6 +25,9 @@ import ceylon.net.uri {
     parse,
     Parameter
 }
+import java.io {
+    IOException
+}
 
 shared String terminator = "\r\n";
 
@@ -291,19 +294,37 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                 
                 Pool pool = poolManager.poolFor(scheme, host, port);
                 Socket socket = pool.borrow();
-                
-                // TODO try/catch for write issues? Proably only way to reliably detect if the socket is still open?
-                // TODO ^^^^ would have to add something to the Pool class to expire a socket and get a new lease?
-                send(socket, method, parsedUri, parameters, headers, data);
-                Message response = receive(socket);
-                
-                // TODO process redirects if flag is true
-                // TODO change return to Message subtype Response, store any redirects in [Response*] attribute of Response
-                
-                pool.yield(socket);
-                // TODO how to handle a streaming response body? Would have to return the lease later after it is done being read.
-                
-                return response;
+                try {
+                    variable Exception? error = null;
+                    // The maximum number of potentially stale connections is
+                    // the connection pool size. Attempt n+1 times, so we
+                    // should get a fresh connection at the end. Throw if it
+                    // still fails.
+                    for (i in 0..pool.maximumConnections) {
+                        try {
+                            send(socket, method, parsedUri, parameters, headers, data);
+                            break;
+                        } catch (IOException e) { // TODO is there a more specific exception?
+                            pool.exchange(socket);
+                            error = e;
+                        }
+                    } else {
+                        throw error else Exception("Unable to send message.");
+                    }
+                    
+                    // TODO probably need a timeout on the receive, attempt retransmission with exchanged socket?
+                    Message response = receive(socket);
+                    
+                    // TODO process redirects if flag is true
+                    // TODO change return to Message subtype Response, store any redirects in [Response*] attribute of Response
+                    
+                    // TODO how to handle a streaming response body? Would have to return the lease later after it is done being read.
+                    // TODO yield in a finally block
+                    
+                    return response;
+                } finally {
+                    pool.yield(socket);
+                }
             } else {
                 throw MissingSchemeException(parsedUri);
             }
