@@ -17,6 +17,7 @@ import ceylon.net.http {
     Message,
     Method,
     getMethod=get,
+    postMethod=post,
     Header
 }
 import ceylon.net.uri {
@@ -111,6 +112,9 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
         "URI to use. The scheme must be supported by [[poolManager]] and in
          [[defaultSchemePorts]] if [[uri]] doesn't specify a port value."
         Uri|String uri;
+        "Parameters to include with the request. If [[method]] is get, then
+         they will be appended to the [[uri]]'s query parameters. If [[method]]
+         is post, then they will be used as the request body, see [[data]]."
         {Parameter*} parameters;
         "Headers to include with the request. They will be encoded with
          [[utf8]], which degrades to ASCII. Note that some servers may only
@@ -125,8 +129,8 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
          - `User-Agent` = `Ceylon/1.2`
          
          The `Content-Type` header may be set/manipulated in certain scenarios:
-         - if [[parameters]] is not [[empty]], and [[method]] is [[post]], the
-         type name will be set to `application/x-www-form-urlencoded`.
+         - if [[parameters]] is not [[empty]], and [[method]] is post, the type
+         name will be set to `application/x-www-form-urlencoded`.
          - if the header is not present, and [[data]] is a [[ByteBuffer]], the
          type name will be set to `application/octet-stream`.
          - if the header is not present, and [[data]] is a [[String]], the type
@@ -143,7 +147,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
         "Data to include in the request body. Usually this is [[null]] for
          idempotent methods (GET, HEAD, etc.), but it does not have to be.
          
-         If [[parameters]] is not empty, and [[method]] is [[post]], then the
+         If [[parameters]] is not empty, and [[method]] is post, then the
          parameters will be used instead of this value. String values will be
          encoded with the charset parameter of the `Content-Type` header, see
          [[headers]]."
