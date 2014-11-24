@@ -1,6 +1,7 @@
 import ceylon.collection {
     unmodifiableMap,
-    HashMap
+    HashMap,
+    LinkedList
 }
 import ceylon.io {
     FileDescriptor,
@@ -44,14 +45,17 @@ shared void externaliseParameters(StringBuilder builder, {Parameter*} parameters
 
 shared void send(reciever,
     method,
-    uri,
+    host,
+    path,
+    query,
     parameters = empty,
     headers = empty,
     data = null) {
     FileDescriptor reciever;
     Method method;
-    "URI to apply. Only the host, path and query portions will be used."
-    Uri uri;
+    String host;
+    String path;
+    String? query;
     {Parameter*} parameters;
     {Header*} headers;
     FileDescriptor|ByteBuffer|String? data;
@@ -64,16 +68,15 @@ shared void send(reciever,
         .append(" ");
     
     // path
-    String path = uri.pathPart;
     if (path.empty) {
         builder.append("/");
     } else {
         builder.append(path);
     }
     Boolean queryParamsAdded;
-    if (exists query = uri.queryPart) {
+    if (exists q = query) {
         builder.append("?")
-            .append(query);
+            .append(q);
         queryParamsAdded = true;
     } else {
         queryParamsAdded = false;
@@ -92,14 +95,6 @@ shared void send(reciever,
         .append("HTTP/1.1")
         .append(terminator);
     
-    // add content type header
-    //if (exists contentTypeValue, !getHeader("Content-Type") exists) {
-    //    headers.add(contentType(contentTypeValue, bodyCharset));
-    //}
-    // add length header
-    //if (bodySize != 0 && !getHeader("Content-Length") exists) {
-    //    headers.add(contentLength(bodySize.string));
-    //}
     Integer? bodySize;
     if (is FileDescriptor data) {
         bodySize = null;
@@ -112,21 +107,55 @@ shared void send(reciever,
     }
     
     // headers
-    Charset bodyCharset = nothing;
-    // TODO defaults
-    // TODO make sure Content-Type is handled as documented, extract/default the charset from the value
-    // TODO drop Content-Length if FileDescriptor data, otherwise include with bodySize if exists
-    // TODO the "values" for header looks like it needs to be rewritten, there's only one value, and only one header with a case-insensitive name (?)
+    // Header semantics are a bit odd, so it seems cleanest to do late processing on them like this
+    value processedHeaders = HashMap<String,LinkedList<String>>();
     for (header in headers) {
-        for (val in header.values) {
-            builder.append(header.name)
-                .append(": ")
-                .append(val)
-                .append(terminator);
+        // Combine headers with same name based on comma seperated value interpretation:
+        // http://tools.ietf.org/rfcmarkup?doc=7230#section-3.2.2
+        if (exists values = processedHeaders.get(header.name.lowercased)) {
+            values.addAll(header.values);
+        } else {
+            processedHeaders.put(header.name.lowercased, LinkedList<String>(header.values));
         }
+    }
+    for (defaultName->defaultValue in { "host"->host,
+        "accept"->"*/*",
+        "accept-charset"->"UTF-8",
+        "user-agent"->"Ceylon/1.2" }) {
+        if (!processedHeaders.defines(defaultName)) {
+            processedHeaders.put(defaultName, LinkedList<String> { defaultValue });
+        }
+    }
+    if (exists s = bodySize) {
+        processedHeaders.put("content-length", LinkedList<String> { s.string });
+    } else {
+        processedHeaders.remove("content-length");
+        processedHeaders.put("transfer-encoding", LinkedList<String> { "chunked" });
+    }
+    
+    Charset bodyCharset = nothing;
+    // TODO make sure Content-Type is handled as documented, extract/default the charset from the value
+    
+    for (headerName->headerValues in processedHeaders) {
+        builder.append(headerName);
+        if (headerValues.empty) {
+            builder.append(";");
+        } else {
+            builder.append(": ");
+            variable Boolean addPrefix = false;
+            for (val in headerValues) {
+                if (addPrefix) {
+                    builder.append(",");
+                }
+                addPrefix = true;
+                builder.append(val);
+            }
+        }
+        builder.append(terminator);
     }
     builder.append(terminator);
     
+    // TODO return builder string before attempting write, so it can be easily retried without losing stream data?
     // Write the header early so that any socket issues are thrown before we touch the body.
     reciever.writeFully(utf8.encode(builder.string));
     
@@ -302,7 +331,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                     // still fails.
                     for (i in 0..pool.maximumConnections) {
                         try {
-                            send(socket, method, parsedUri, parameters, headers, data);
+                            send(socket, method, host, parsedUri.pathPart, parsedUri.queryPart, parameters, headers, data);
                             break;
                         } catch (IOException e) { // TODO is there a more specific exception?
                             pool.exchange(socket);
@@ -313,6 +342,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                     }
                     
                     // TODO probably need a timeout on the receive, attempt retransmission with exchanged socket?
+                    // TODO ^^^ on retransmit, will need to handle fd/buffer reset. Is that possible?
                     Message response = receive(socket);
                     
                     // TODO process redirects if flag is true
