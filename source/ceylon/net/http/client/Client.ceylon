@@ -19,7 +19,8 @@ import ceylon.net.http {
     Method,
     getMethod=get,
     postMethod=post,
-    Header
+    Header,
+    contentTypeFormUrlEncoded
 }
 import ceylon.net.uri {
     Uri,
@@ -95,15 +96,13 @@ shared void send(reciever,
         .append("HTTP/1.1")
         .append(terminator);
     
-    Integer? bodySize;
-    if (is FileDescriptor data) {
-        bodySize = null;
-    } else if (is ByteBuffer data) {
-        bodySize = data.available;
-    } else if (is String data) {
-        bodySize = data.size;
+    String? postParameters;
+    if (!parameters.empty && method == postMethod) {
+        value paramBuilder = StringBuilder();
+        externaliseParameters(paramBuilder, parameters);
+        postParameters = paramBuilder.string;
     } else {
-        bodySize = 0;
+        postParameters = null;
     }
     
     // headers
@@ -126,15 +125,80 @@ shared void send(reciever,
             processedHeaders.put(defaultName, LinkedList<String> { defaultValue });
         }
     }
-    if (exists s = bodySize) {
-        processedHeaders.put("content-length", LinkedList<String> { s.string });
+    // TODO make sure Content-Type is handled as documented, extract/default the charset from the value
+    Charset bodyCharset = nothing;
+    String contentTypeName;
+    String contentTypeCharset;
+    //The `Content-Type` header may be set/manipulated in certain scenarios:
+    //        - if [[parameters]] is not [[empty]], and [[method]] is post, the type
+    //name will be set to `application/x-www-form-urlencoded`.
+    //        - if the header is not present, and [[data]] is a [[ByteBuffer]] or
+    //[[FileDescriptor]], the type name will be set to
+    //`application/octet-stream`.
+    //        - if the header is not present, and [[data]] is a [[String]], the type
+    //name will be set to `text/plain`.
+    //        - if the header is present, and the type name isn't
+    //         `application/octet-stream`, and the header's value parameter `charset`
+    //is not set, it will be set to `UTF-8`.
+    if (exists postParameters) {
+        contentTypeName = contentTypeFormUrlEncoded;
+        // TODO charset from header param if available, default utf-8
+    } else if (exists values = processedHeaders.get("content-type"), exists val = values.last) {
+        // Content-Type := type "/" subtype *[";" parameter]
+        String[] params = [for (p in val.split((ch) => ch == ';')) p];
+        if (nonempty params) {
+            contentTypeName = params.first;
+            for (param in params.spanFrom(1)) {
+                String paramName = nothing;
+                String paramVal = nothing;
+                if (nothing) {
+                    contentTypeCharset = paramVal;
+                    break;
+                }
+            } else {
+                contentTypeCharset = "UTF-8";
+            }
+        } else {
+            if (data is FileDescriptor || data is ByteBuffer) {
+                contentTypeName = "application/octet-stream";
+            } else if (data is String) {
+                contentTypeName = "text/plain";
+            } else {
+                // TODO null, no data, therefore do not include content-type header
+            }
+        }
+    }
+    
+    String contentTypeValue = "``contentTypeName``;charset=``contentTypeCharset``";
+    processedHeaders.put("content-type", LinkedList<String> { contentTypeValue });
+    
+    FileDescriptor|ByteBuffer? body;
+    Integer? bodySize;
+    if (exists postParameters) {
+        value buffer = bodyCharset.encode(postParameters);
+        bodySize = buffer.available;
+        body = buffer;
+    } else if (is FileDescriptor data) {
+        body = data;
+        bodySize = null;
+    } else if (is ByteBuffer data) {
+        body = data;
+        bodySize = data.available;
+    } else if (is String data) {
+        value buffer = bodyCharset.encode(data);
+        bodySize = buffer.available;
+        body = buffer;
+    } else {
+        body = null;
+        bodySize = 0;
+    }
+    
+    if (exists bodySize) {
+        processedHeaders.put("content-length", LinkedList<String> { bodySize.string });
     } else {
         processedHeaders.remove("content-length");
         processedHeaders.put("transfer-encoding", LinkedList<String> { "chunked" });
     }
-    
-    Charset bodyCharset = nothing;
-    // TODO make sure Content-Type is handled as documented, extract/default the charset from the value
     
     for (headerName->headerValues in processedHeaders) {
         builder.append(headerName);
@@ -159,17 +223,9 @@ shared void send(reciever,
     // Write the header early so that any socket issues are thrown before we touch the body.
     reciever.writeFully(utf8.encode(builder.string));
     
-    if (!parameters.empty && method == post) {
-        value paramBuilder = StringBuilder();
-        externaliseParameters(paramBuilder, parameters);
-        reciever.writeFully(bodyCharset.encode(paramBuilder.string));
-    } else if (is String s = data) {
-        reciever.writeFully(bodyCharset.encode(s));
-    } else if (is ByteBuffer b = data) {
-        reciever.writeFully(b);
-    } else if (is FileDescriptor f = data) {
+    if (is FileDescriptor body) {
         // Transfer-Encoding: chunked header should already be set
-        f.readFully(void(ByteBuffer buffer) {
+        body.readFully(void(ByteBuffer buffer) {
                 Integer length = buffer.available;
                 // Can't be zero length, as that is specified as the terminating chunk
                 if (length > 0) {
@@ -181,6 +237,8 @@ shared void send(reciever,
             });
         // Terminating zero-length chunk
         reciever.writeFully(utf8.encode("0" + terminator + terminator));
+    } else if (is ByteBuffer body) {
+        reciever.writeFully(body);
     }
     // else null: write nothing
 }
@@ -343,6 +401,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                     
                     // TODO probably need a timeout on the receive, attempt retransmission with exchanged socket?
                     // TODO ^^^ on retransmit, will need to handle fd/buffer reset. Is that possible?
+                    // TODO it may not be desirable to retransmit on a timeout (two generals' problem), as request may not be indempotent, even for usually indempotent methods. Just remove the socket and throw timeoutexception
                     Message response = receive(socket);
                     
                     // TODO process redirects if flag is true
