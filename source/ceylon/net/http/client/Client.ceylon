@@ -360,6 +360,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
          To disable redirect following, set this to 0."
         Integer maxRedirects;
         // TODO argument ideas: lazy (relating to response body reading), authentication, timeouts
+        // TODO Sockets have to be modified to add timeout support: https://technfun.wordpress.com/2009/01/29/networking-in-java-non-blocking-nio-blocking-nio-and-io/
         
         Uri parsedUri;
         switch (uri)
@@ -406,6 +407,9 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                         } catch (IOException e) {
                             message[0].position = 0;
                             pool.exchange(socket);
+                            if (exists x = error) {
+                                e.addSuppressed(x);
+                            }
                             error = e;
                         }
                     } else {
@@ -414,16 +418,12 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                     // Write the body after we're fairly sure the socket is ok
                     writeBody(socket, message[1]);
                     
-                    // TODO probably need a timeout on the receive, attempt retransmission with exchanged socket?
-                    // TODO ^^^ on retransmit, will need to handle fd/buffer reset. Is that possible?
-                    // TODO it may not be desirable to retransmit on a timeout (two generals' problem), as request may not be indempotent, even for usually indempotent methods. Just remove the socket and throw timeoutexception
                     Message response = receive(socket);
                     
                     // TODO process redirects if flag is true
                     // TODO change return to Message subtype Response, store any redirects in [Response*] attribute of Response
                     
                     // TODO how to handle a streaming response body? Would have to return the lease later after it is done being read.
-                    // TODO yield in a finally block
                     
                     return response;
                 } finally {
