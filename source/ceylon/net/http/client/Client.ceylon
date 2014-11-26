@@ -44,7 +44,31 @@ shared void externaliseParameters(StringBuilder builder, {Parameter*} parameters
     }
 }
 
-shared void send(reciever,
+shared void writeBody(receiver, body) {
+    FileDescriptor receiver;
+    FileDescriptor|ByteBuffer? body;
+    
+    if (is FileDescriptor body) {
+        // Transfer-Encoding: chunked header should already be set
+        body.readFully(void(ByteBuffer buffer) {
+                Integer length = buffer.available;
+                // Can't be zero length, as that is specified as the terminating chunk
+                if (length > 0) {
+                    String lengthHex = formatInteger(length, 16);
+                    receiver.writeFully(utf8.encode(lengthHex + terminator));
+                    receiver.writeFully(buffer);
+                    receiver.writeFully(utf8.encode(terminator));
+                }
+            });
+        // Terminating zero-length chunk
+        receiver.writeFully(utf8.encode("0" + terminator + terminator));
+    } else if (is ByteBuffer body) {
+        receiver.writeFully(body);
+    }
+    // else null: write nothing
+}
+
+shared [ByteBuffer, FileDescriptor|ByteBuffer?] buildMessage(
     method,
     host,
     path,
@@ -52,7 +76,6 @@ shared void send(reciever,
     parameters = empty,
     headers = empty,
     data = null) {
-    FileDescriptor reciever;
     Method method;
     String host;
     String path;
@@ -219,28 +242,7 @@ shared void send(reciever,
     }
     builder.append(terminator);
     
-    // TODO return builder string before attempting write, so it can be easily retried without losing stream data?
-    // Write the header early so that any socket issues are thrown before we touch the body.
-    reciever.writeFully(utf8.encode(builder.string));
-    
-    if (is FileDescriptor body) {
-        // Transfer-Encoding: chunked header should already be set
-        body.readFully(void(ByteBuffer buffer) {
-                Integer length = buffer.available;
-                // Can't be zero length, as that is specified as the terminating chunk
-                if (length > 0) {
-                    String lengthHex = formatInteger(length, 16);
-                    reciever.writeFully(utf8.encode(lengthHex + terminator));
-                    reciever.writeFully(buffer);
-                    reciever.writeFully(utf8.encode(terminator));
-                }
-            });
-        // Terminating zero-length chunk
-        reciever.writeFully(utf8.encode("0" + terminator + terminator));
-    } else if (is ByteBuffer body) {
-        reciever.writeFully(body);
-    }
-    // else null: write nothing
+    return [utf8.encode(builder.string), body];
 }
 
 shared Message receive(FileDescriptor sender) {
@@ -381,6 +383,15 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                 
                 Pool pool = poolManager.poolFor(scheme, host, port);
                 Socket socket = pool.borrow();
+                [ByteBuffer, FileDescriptor|ByteBuffer?] message = buildMessage {
+                    method;
+                    host;
+                    parsedUri.pathPart;
+                    parsedUri.queryPart;
+                    parameters;
+                    headers;
+                    data;
+                };
                 try {
                     variable Exception? error = null;
                     // The maximum number of potentially stale connections is
@@ -389,15 +400,19 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                     // still fails.
                     for (i in 0..pool.maximumConnections) {
                         try {
-                            send(socket, method, host, parsedUri.pathPart, parsedUri.queryPart, parameters, headers, data);
+                            // Write the prefix first as it's easy to reset it if writing fails
+                            socket.writeFully(message[0]);
                             break;
-                        } catch (IOException e) { // TODO is there a more specific exception?
+                        } catch (IOException e) {
+                            message[0].position = 0;
                             pool.exchange(socket);
                             error = e;
                         }
                     } else {
                         throw error else Exception("Unable to send message.");
                     }
+                    // Write the body after we're fairly sure the socket is ok
+                    writeBody(socket, message[1]);
                     
                     // TODO probably need a timeout on the receive, attempt retransmission with exchanged socket?
                     // TODO ^^^ on retransmit, will need to handle fd/buffer reset. Is that possible?
