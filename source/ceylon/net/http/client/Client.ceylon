@@ -34,6 +34,23 @@ import java.io {
 
 shared String terminator = "\r\n";
 
+shared String capitaliseHeaderName(String headerName) {
+    value builder = StringBuilder();
+    variable Boolean addPrefix = false;
+    for (part in headerName.split((a) => a == '-')) {
+        if (addPrefix) {
+            builder.append("-");
+        }
+        addPrefix = true;
+        if (exists first = part.first) {
+            builder.appendCharacter(first.uppercased);
+            String remainder = part.spanFrom(1).lowercased;
+            builder.append(remainder);
+        }
+    }
+    return builder.string;
+}
+
 shared void externaliseParameters(StringBuilder builder, {Parameter*} parameters) {
     variable Boolean addPrefix = false;
     for (parameter in parameters) {
@@ -234,7 +251,7 @@ shared [ByteBuffer, FileDescriptor|ByteBuffer?] buildMessage(
     }
     
     for (headerName->headerValues in processedHeaders) {
-        builder.append(headerName);
+        builder.append(capitaliseHeaderName(headerName));
         if (headerValues.empty) {
             builder.append(";");
         } else {
