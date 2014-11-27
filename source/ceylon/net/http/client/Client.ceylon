@@ -12,7 +12,8 @@ import ceylon.io.buffer {
 }
 import ceylon.io.charset {
     Charset,
-    utf8
+    utf8,
+    getCharset
 }
 import ceylon.net.http {
     Message,
@@ -148,56 +149,64 @@ shared [ByteBuffer, FileDescriptor|ByteBuffer?] buildMessage(
             processedHeaders.put(defaultName, LinkedList<String> { defaultValue });
         }
     }
-    // TODO make sure Content-Type is handled as documented, extract/default the charset from the value
-    Charset bodyCharset = nothing;
-    String contentTypeName;
-    String contentTypeCharset;
-    //The `Content-Type` header may be set/manipulated in certain scenarios:
-    //        - if [[parameters]] is not [[empty]], and [[method]] is post, the type
-    //name will be set to `application/x-www-form-urlencoded`.
-    //        - if the header is not present, and [[data]] is a [[ByteBuffer]] or
-    //[[FileDescriptor]], the type name will be set to
-    //`application/octet-stream`.
-    //        - if the header is not present, and [[data]] is a [[String]], the type
-    //name will be set to `text/plain`.
-    //        - if the header is present, and the type name isn't
-    //         `application/octet-stream`, and the header's value parameter `charset`
-    //is not set, it will be set to `UTF-8`.
-    if (exists postParameters) {
-        contentTypeName = contentTypeFormUrlEncoded;
-        // TODO charset from header param if available, default utf-8
-    } else if (exists values = processedHeaders.get("content-type"), exists val = values.last) {
-        // Content-Type := type "/" subtype *[";" parameter]
-        String[] params = [for (p in val.split((ch) => ch == ';')) p];
-        if (nonempty params) {
-            contentTypeName = params.first;
-            for (param in params.spanFrom(1)) {
-                String paramName = nothing;
-                String paramVal = nothing;
-                if (nothing) {
-                    contentTypeCharset = paramVal;
-                    break;
-                }
+    
+    // https://tools.ietf.org/html/rfc7231#section-3.1.1.5
+    String? defaultTypeName;
+    String? defaultTypeCharset;
+    if (postParameters exists) {
+        defaultTypeName = "application/x-www-form-urlencoded";
+        defaultTypeCharset = "UTF-8";
+    } else if (data is FileDescriptor) {
+        defaultTypeName = "application/octet-stream";
+        defaultTypeCharset = null;
+    } else if (data is ByteBuffer) {
+        defaultTypeName = "application/octet-stream";
+        defaultTypeCharset = null;
+    } else if (data is String) {
+        defaultTypeName = "text/plain";
+        defaultTypeCharset = "UTF-8";
+    } else {
+        defaultTypeName = null;
+        defaultTypeCharset = null;
+    }
+    Charset? bodyCharset;
+    if (exists defaultTypeName) {
+        String contentTypeName;
+        String? contentTypeCharset;
+        
+        if (exists values = processedHeaders.get("content-type"),
+            exists val = values.last,
+            nonempty typeNameAndParams = [for (p in val.split((ch) => ch == ';')) p]) {
+            contentTypeName = typeNameAndParams.first;
+            String[] params = typeNameAndParams.spanFrom(1);
+            if (exists charsetParam = params.findLast((elem) => elem.trimmed.startsWith("charset=")),
+                exists charsetParamValue = charsetParam.split((ch) => ch == '=').getFromFirst(1)) {
+                contentTypeCharset = charsetParamValue.trimmed;
             } else {
-                contentTypeCharset = "UTF-8";
+                contentTypeCharset = defaultTypeCharset;
             }
         } else {
-            if (data is FileDescriptor || data is ByteBuffer) {
-                contentTypeName = "application/octet-stream";
-            } else if (data is String) {
-                contentTypeName = "text/plain";
-            } else {
-                // TODO null, no data, therefore do not include content-type header
-            }
+            contentTypeName = defaultTypeName;
+            contentTypeCharset = defaultTypeCharset;
         }
+        
+        String contentTypeValue;
+        if (exists contentTypeCharset) {
+            contentTypeValue = "``contentTypeName``; charset=``contentTypeCharset``";
+            bodyCharset = getCharset(contentTypeCharset);
+        } else {
+            contentTypeValue = contentTypeName;
+            bodyCharset = null;
+        }
+        processedHeaders.put("content-type", LinkedList<String> { contentTypeValue });
+    } else {
+        bodyCharset = null;
     }
-    
-    String contentTypeValue = "``contentTypeName``;charset=``contentTypeCharset``";
-    processedHeaders.put("content-type", LinkedList<String> { contentTypeValue });
     
     FileDescriptor|ByteBuffer? body;
     Integer? bodySize;
     if (exists postParameters) {
+        assert (exists bodyCharset);
         value buffer = bodyCharset.encode(postParameters);
         bodySize = buffer.available;
         body = buffer;
@@ -208,6 +217,7 @@ shared [ByteBuffer, FileDescriptor|ByteBuffer?] buildMessage(
         body = data;
         bodySize = data.available;
     } else if (is String data) {
+        assert (exists bodyCharset);
         value buffer = bodyCharset.encode(data);
         bodySize = buffer.available;
         body = buffer;
@@ -326,22 +336,26 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
          - `Accept-Charset` = `UTF-8`
          - `User-Agent` = `Ceylon/1.2`
          
-         The `Content-Type` header may be set/manipulated in certain scenarios:
-         - if [[parameters]] is not [[empty]], and [[method]] is post, the type
-         name will be set to `application/x-www-form-urlencoded`.
-         - if the header is not present, and [[data]] is a [[ByteBuffer]] or
-         [[FileDescriptor]], the type name will be set to
-         `application/octet-stream`.
-         - if the header is not present, and [[data]] is a [[String]], the type
-         name will be set to `text/plain`.
-         - if the header is present, and the type name isn't
-         `application/octet-stream`, and the header's value parameter `charset`
-         is not set, it will be set to `UTF-8`.
+         For the `Content-Type` header:
+         - if [[data]] is the body, and it is null, the header will not be set.
+         - if a type name is present in the header value, it will be preserved.
+         - if a type name is missing, it will be determined from the body (see
+         [[data]]). If [[parameters]] is the body, the type name will be set to
+         `application/x-www-form-urlencoded`. If [[data]] is the body,
+         [[String]] defaults to `text/plain`, [[ByteBuffer]] or
+         [[FileDescriptor]] defaults to `application/octet-stream`.
+         - if a charset parameter is present in the header value, it will be
+         preserved.
+         - if a charset parameter is missing, and the body must be encoded
+         (see [[data]]), the charset parameter will be defaulted to `UTF-8`.
          
-         The `charset` parameter of the `Content-Type` header will be parsed
-         and used to encode the message body (only if there is one, see
-         [[data]]). Its value must be one of the supported
-         [[ceylon.io.charset::charsets]]."
+         The charset parameter of the `Content-Type` header will be parsed
+         and used to encode the message body if required. Its value must be one
+         of the supported [[ceylon.io.charset::charsets]].
+         
+         The `Content-Length` and `Transfer-Encoding` headers should not be set
+         by the user, and will be overriden as required to create a compliant
+         HTTP message."
         {Header*} headers;
         "Data to include in the request body. Usually this is [[null]] for
          idempotent methods (GET, HEAD, etc.), but it does not have to be.
