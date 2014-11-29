@@ -45,6 +45,7 @@ shared class Message(String|ByteBuffer initBodyThing) { // TODO accept body as s
     }
 }
 
+// TODO might need this server side, but not client
 class Request() {
     shared Method method = nothing;
 }
