@@ -89,12 +89,17 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
          is post, then they will be used as the request body, see [[data]]."
         {Parameter*} parameters;
         "Headers to include with the request. They will be encoded with
-         [[utf8]], which degrades to ASCII. Note that some servers may only
-         accept ASCII header characters, so be cautious when including unicode
-         characters. Header keys are case insensitive (`Host` == `host`).
+         [[ceylon.io.charset::utf8]], which degrades to ASCII. Note that some
+         servers may only accept ASCII header characters, so be cautious when
+         including unicode characters.
          
-         These default headers will be provided if you do not specify a value
-         for them:
+         Header names are case insensitive (`Host` == `host`), and headers with
+         duplicate names will be merged into a single header with a comma
+         seperated value. For more information about duplicately named headers
+         see [RFC 7230 §3.2.2]
+         (https://tools.ietf.org/rfcmarkup?doc=7230#section-3.2.2).
+         
+         These default headers will be provided if you do not specify them:
          - `Host` = the host part of the [[uri]]
          - `Accept` = `*/*`
          - `Accept-Charset` = `UTF-8`
