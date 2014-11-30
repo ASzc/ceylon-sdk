@@ -74,6 +74,7 @@ Byte[] statusHttp = [for (c in "HTTP/") c.integer.byte];
 Byte versionPoint = '.'.integer.byte;
 Byte space = ' '.integer.byte;
 Byte cr = '\r'.integer.byte;
+Byte lr = '\n'.integer.byte;
 
 by ("Alex Szczuczko", "Stéphane Épardaud")
 shared Response receive(FileDescriptor sender) {
@@ -121,9 +122,18 @@ shared Response receive(FileDescriptor sender) {
         buffer.putByte(byte);
     }
     String readString(Byte terminatedBy) {
+        Byte read() {
+            if (exists b = reader.readByte()) {
+                return b;
+            } else {
+                throw ParseException("Premature EOF while reading string");
+            }
+        }
         buffer.clear();
-        while (nothing) {
-            // TODO
+        variable Byte byte = read();
+        while (byte != terminatedBy) {
+            pushToBuffer(byte);
+            byte = read();
         }
         buffer.flip();
         decoder.decode(buffer);
@@ -142,6 +152,8 @@ shared Response receive(FileDescriptor sender) {
     expectBytes { space };
     // Reason phrase, ex: OK
     String reason = readString(cr);
+    // \r already read by readString(), read the \n still present
+    expectBytes { lr };
     
     // TODO headers
     
