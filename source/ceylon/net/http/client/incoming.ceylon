@@ -23,7 +23,7 @@ shared class ParseException(String? description = null, Throwable? cause = null)
         extends Exception(description, cause) {
 }
 
-String formatCharSet(Set<Integer> set) {
+String formatCharSet(Set<Byte> set) {
     value builder = StringBuilder();
     builder.append("{");
     variable Boolean addPrefix = false;
@@ -32,41 +32,48 @@ String formatCharSet(Set<Integer> set) {
             builder.append(", ");
         }
         builder.append("#");
-        builder.append(formatInteger(element, 16));
+        builder.append(formatInteger(element.signed, 16));
     }
     builder.append("}");
     return builder.string;
 }
 
-String formatActual(Integer? actual) {
+String formatActual(Byte? actual) {
     if (exists actual) {
-        return "#``formatInteger(actual, 16)``";
+        return "#``formatInteger(actual.signed, 16)``";
     } else {
         return "EOF";
     }
 }
 
 shared class OutOfSequenceCharacter(actual, expected, expectedIn, cause = null)
-        extends ParseException("Got ``formatActual(actual)`` when expecting #``formatInteger(expected, 16)`` in ``expectedIn``.", cause) {
-    shared Integer? actual;
-    shared Integer expected;
-    shared String expectedIn;
+        extends ParseException("Got ``formatActual(actual)`` when expecting #``formatInteger(expected.signed, 16)`` in ``expectedIn``.", cause) {
+    shared Byte? actual;
+    shared Byte expected;
+    shared {Byte*} expectedIn;
     Throwable? cause;
 }
 
 shared class UnexpectedCharacter(actual, expectedIn, cause = null)
         extends ParseException("Got ``formatActual(actual)`` when expecting one of ``formatCharSet(expectedIn)``.", cause) {
-    shared Integer? actual;
-    shared Set<Integer> expectedIn;
+    shared Byte? actual;
+    shared Set<Byte> expectedIn;
     Throwable? cause;
 }
 
 // ABNF character sets https://tools.ietf.org/rfcmarkup?doc=5234#appendix-B.1
-Set<Integer> ctl = HashSet<Integer> { elements = (#00..#1F).chain({ #7F }); };
-Set<Integer> digit = HashSet<Integer> { elements = #30..#39; };
-Set<Integer> hexDigit = HashSet<Integer> { elements = (#30..#39).chain(#61..#66).chain(#41..#46); };
+// Controls
+Set<Byte> ctl = HashSet<Byte> { for (c in (#00..#1F).chain({ #7F })) c.byte };
+// 0 - 9
+Set<Byte> digit = HashSet<Byte> { for (c in (#30..#39)) c.byte };
+// 0 - 9 | a-f | A-F
+Set<Byte> hexDigit = HashSet<Byte> { for (c in (#30..#39).chain(#61..#66).chain(#41..#46)) c.byte };
 
-alias Expected => String|Set<Integer>;
+// HTTP keywords
+Byte[] statusHttp = [for (c in "HTTP/") c.integer.byte];
+Byte versionPoint = '.'.integer.byte;
+Byte space = ' '.integer.byte;
+Byte cr = '\r'.integer.byte;
 
 by ("Alex Szczuczko", "Stéphane Épardaud")
 shared Response receive(FileDescriptor sender) {
@@ -77,59 +84,69 @@ shared Response receive(FileDescriptor sender) {
      decoding is ok when not using it for element deliniation."
     value decoder = utf8.Decoder();
     
-    Integer status;
-    String reason;
-    Integer major;
-    Integer minor;
-    // TODO construct Header list from map afterwards
-    value headers = HashMap<String,LinkedList<String>>();
-    
-    variable Integer byte = 0; // TODO required?
-    value buffer = newByteBuffer(1024);
-    
-    void expect(Expected expected) {
-        switch (expected)
-        case (is String) {
-            for (char in expected) {
-                Integer charInt = char.integer;
-                Integer read;
-                if (exists b = reader.readByte()) {
-                    read = b.signed;
-                } else {
-                    throw OutOfSequenceCharacter(null, charInt, expected);
-                }
-                if (read != charInt) {
-                    throw OutOfSequenceCharacter(read, charInt, expected);
-                }
-            }
-        }
-        case (is Set<Integer>) {
-            Integer read;
+    void expectBytes({Byte*} expected) {
+        for (char in expected) {
             if (exists b = reader.readByte()) {
-                read = b.signed;
+                if (b != char) {
+                    throw OutOfSequenceCharacter(b, char, expected);
+                }
             } else {
-                throw UnexpectedCharacter(null, expected);
-            }
-            if (!read in expected) {
-                throw UnexpectedCharacter(read, expected);
+                throw OutOfSequenceCharacter(null, char, expected);
             }
         }
     }
     
+    Byte expectByteIn(Set<Byte> expected) {
+        if (exists b = reader.readByte()) {
+            if (!b in expected) {
+                throw UnexpectedCharacter(b, expected);
+            }
+            return b;
+        } else {
+            throw UnexpectedCharacter(null, expected);
+        }
+    }
     
-    //reader.readByte();
+    Integer expectDigit() {
+        return expectByteIn(digit).signed - #30; // '0'
+    }
     
-    // TODO status line
-    // TODO HTTP version
-    expect("HTTP/");
-    //major = parseDigit();
-    //readChar('.');
-    //minor = parseDigit();
+    value buffer = newByteBuffer(1024);
+    void pushToBuffer(Byte byte) {
+        // grow the buffer if required
+        if (!buffer.hasAvailable) {
+            buffer.resize(buffer.capacity + 1024, true);
+        }
+        // save the byte
+        buffer.putByte(byte);
+    }
+    String readString(Byte terminatedBy) {
+        buffer.clear();
+        while (nothing) {
+            // TODO
+        }
+        buffer.flip();
+        decoder.decode(buffer);
+        return decoder.consume();
+    }
     
-    // TODO status
-    // TODO reason
+    // Status line, ex: HTTP/1.1 200 OK\r\n
+    // HTTP version, ex: HTTP/1.1
+    expectBytes(statusHttp);
+    Integer major = expectDigit();
+    expectBytes { versionPoint };
+    Integer minor = expectDigit();
+    expectBytes { space };
+    // Status code, ex: 200
+    Integer status = expectDigit() * 100 + expectDigit() * 10 + expectDigit();
+    expectBytes { space };
+    // Reason phrase, ex: OK
+    String reason = readString(cr);
     
     // TODO headers
+    
+    // TODO construct Header list from map afterwards
+    value headers = HashMap<String,LinkedList<String>>();
     
     Response incoming = nothing;
     return incoming;
