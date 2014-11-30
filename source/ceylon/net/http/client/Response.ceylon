@@ -19,7 +19,7 @@ import ceylon.net.http {
 
 "Represents an HTTP Response"
 by("Stéphane Épardaud")
-shared class Response(status, reason, major, minor, 
+shared class ResponseOld(status, reason, major, minor, 
     FileDescriptor socket, Parser parser) 
         satisfies Correspondence<String, Header>{
     
@@ -111,6 +111,8 @@ shared class Response(status, reason, major, minor,
     shared actual Boolean defines(String key) 
             => headersByName.defines(key);
 
+    // TODO convert to getter
+    // TODO can probably supply a Reader that will yield a socket once lazy reading is done
     "Returns a [[Reader]] for the entity body."
     shared Reader getReader() {
         if(exists transferEncoding 

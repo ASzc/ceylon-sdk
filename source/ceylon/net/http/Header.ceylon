@@ -6,6 +6,7 @@ import ceylon.io.charset {
     Charset
 }
 
+// TODO convert to immutable
 "Represents an HTTP Header"
 by("Stéphane Épardaud")
 shared class Header(name, String* initialValues) {
