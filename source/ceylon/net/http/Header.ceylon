@@ -6,6 +6,24 @@ import ceylon.io.charset {
     Charset
 }
 
+shared String capitaliseHeaderName(String headerName) {
+    value builder = StringBuilder();
+    variable Boolean addPrefix = false;
+    for (part in headerName.split((a) => a == '-')) {
+        if (addPrefix) {
+            builder.append("-");
+        }
+        addPrefix = true;
+        if (exists first = part.first) {
+            builder.appendCharacter(first.uppercased);
+            String remainder = part.spanFrom(1).lowercased;
+            builder.append(remainder);
+        }
+    }
+    return builder.string;
+}
+
+// TODO make name always conform to capitaliseHeaderName?
 // TODO convert to immutable
 "Represents an HTTP Header"
 by("Stéphane Épardaud")

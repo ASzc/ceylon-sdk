@@ -16,7 +16,9 @@ import ceylon.io.readers {
     FileDescriptorReader
 }
 import ceylon.net.http {
-    Message
+    Message,
+    Header,
+    capitaliseHeaderName
 }
 
 shared class ParseException(String? description = null, Throwable? cause = null)
@@ -74,7 +76,8 @@ Byte[] statusHttp = [for (c in "HTTP/") c.integer.byte];
 Byte versionPoint = '.'.integer.byte;
 Byte space = ' '.integer.byte;
 Byte cr = '\r'.integer.byte;
-Byte lr = '\n'.integer.byte;
+Byte lf = '\n'.integer.byte;
+Byte headerSep = ':'.integer.byte;
 
 by ("Alex Szczuczko", "Stéphane Épardaud")
 shared Response receive(FileDescriptor sender) {
@@ -121,7 +124,7 @@ shared Response receive(FileDescriptor sender) {
         // save the byte
         buffer.putByte(byte);
     }
-    String readString(Byte terminatedBy) {
+    [String, Byte] readString({Byte*} terminatedBy) {
         Byte read() {
             if (exists b = reader.readByte()) {
                 return b;
@@ -131,13 +134,13 @@ shared Response receive(FileDescriptor sender) {
         }
         buffer.clear();
         variable Byte byte = read();
-        while (byte != terminatedBy) {
+        while (!byte in terminatedBy) {
             pushToBuffer(byte);
             byte = read();
         }
         buffer.flip();
         decoder.decode(buffer);
-        return decoder.consume();
+        return [decoder.consume(), byte];
     }
     
     // Status line, ex: HTTP/1.1 200 OK\r\n
@@ -151,14 +154,40 @@ shared Response receive(FileDescriptor sender) {
     Integer status = expectDigit() * 100 + expectDigit() * 10 + expectDigit();
     expectBytes { space };
     // Reason phrase, ex: OK
-    String reason = readString(cr);
+    String reason = readString{cr}[0];
     // \r already read by readString(), read the \n still present
-    expectBytes { lr };
+    expectBytes { lf };
     
-    // TODO headers
+    // Headers
+    value headerMap = HashMap<String,LinkedList<String>>();
+    while (true) {
+        value nameOrTerm = readString{headerSep, cr};
+        String name = nameOrTerm[0].trimmed.lowercased;
+        Byte termChar = nameOrTerm[1];
+        // End of headers?
+        if (termChar == cr) {
+            if (name.empty) {
+                // \r already read by readString(), read the \n still present
+                expectBytes { lf };
+                break;
+            } else {
+                // TODO throw exception, unexpected value between terminators
+            }
+        } else {
+            if (name.empty) {
+                // TODO throw exception, blank header name
+            }
+        }
+        // Process header, merge if required
+        {String*} newValues = readString{cr}[0].split((ch) => ch in { ' ', '\t' });
+        if (exists values = headerMap.get(name)) {
+            values.addAll(newValues);
+        } else {
+            headerMap.put(name, LinkedList<String>(newValues));
+        }
+    }
     
-    // TODO construct Header list from map afterwards
-    value headers = HashMap<String,LinkedList<String>>();
+    Header[] headers = [for (name->values in headerMap) Header(capitaliseHeaderName(name), *values)];
     
     Response incoming = nothing;
     return incoming;

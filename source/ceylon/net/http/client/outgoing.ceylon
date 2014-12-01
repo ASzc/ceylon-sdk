@@ -16,30 +16,14 @@ import ceylon.io.charset {
 import ceylon.net.http {
     Method,
     Header,
-    postMethod=post
+    postMethod=post,
+    capitaliseHeaderName
 }
 import ceylon.net.uri {
     Parameter
 }
 
 shared String terminator = "\r\n";
-
-shared String capitaliseHeaderName(String headerName) {
-    value builder = StringBuilder();
-    variable Boolean addPrefix = false;
-    for (part in headerName.split((a) => a == '-')) {
-        if (addPrefix) {
-            builder.append("-");
-        }
-        addPrefix = true;
-        if (exists first = part.first) {
-            builder.appendCharacter(first.uppercased);
-            String remainder = part.spanFrom(1).lowercased;
-            builder.append(remainder);
-        }
-    }
-    return builder.string;
-}
 
 shared void externaliseParameters(StringBuilder builder, {Parameter*} parameters) {
     variable Boolean addPrefix = false;
@@ -241,10 +225,8 @@ shared [ByteBuffer, FileDescriptor|ByteBuffer?] buildMessage(
     }
     
     for (headerName->headerValues in processedHeaders) {
-        builder.append(capitaliseHeaderName(headerName));
-        if (headerValues.empty) {
-            builder.append(";");
-        } else {
+        if (!headerValues.empty) {
+            builder.append(capitaliseHeaderName(headerName));
             builder.append(": ");
             variable Boolean addPrefix = false;
             for (val in headerValues) {
@@ -254,8 +236,8 @@ shared [ByteBuffer, FileDescriptor|ByteBuffer?] buildMessage(
                 addPrefix = true;
                 builder.append(val);
             }
+            builder.append(terminator);
         }
-        builder.append(terminator);
     }
     builder.append(terminator);
     
