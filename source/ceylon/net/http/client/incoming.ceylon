@@ -7,13 +7,15 @@ import ceylon.io {
     FileDescriptor
 }
 import ceylon.io.buffer {
-    newByteBuffer
+    newByteBuffer,
+    ByteBuffer
 }
 import ceylon.io.charset {
     utf8
 }
 import ceylon.io.readers {
-    FileDescriptorReader
+    FileDescriptorReader,
+    Reader
 }
 import ceylon.net.http {
     Message,
@@ -194,13 +196,62 @@ shared Response receive(FileDescriptor sender) {
     return incoming;
 }
 
-shared class BodyReader(FileDescriptor sender, Anything(FileDescriptor) yielder, Boolean lazy, Boolean chunked) {
+shared class BodyReader(sender, yield, lazy, size = null) extends Reader() {
+    FileDescriptor sender;
+    "Function to call when done reading the body"
+    Anything(FileDescriptor) yield;
+    "If true, wait to read the body until [[read]] is called."
+    shared Boolean lazy;
+    "Null implies chunked transfer"
+    shared Integer? size;
     
-    // TODO if not lazy, read immediately
+    ByteBuffer eagerRead() {
+        ByteBuffer body;
+        if (exists size) {
+            // TODO Socket timeout is required to recover from size being greater than the actual body size.
+            ByteBuffer b = newByteBuffer(size);
+            Integer bytesRead = sender.read(b);
+            if (size != bytesRead) {
+                // TODO throw exception, body size didn't match (smaller?)
+            }
+            
+            body = b;
+            
+            yield(sender);
+        } else {
+            // TODO chunked transfer encoding
+            
+            body = nothing;
+        }
+        return body;
+    }
     
-    // TODO if chunked, expect C.T.E.
+    ByteBuffer? body;
+    if (lazy) {
+        body = null;
+    } else {
+        body = eagerRead();
+    }
     
-    // TODO when done reading, yield sender with yielder
+    // TODO when done reading, yield sender
+    
+    // TODO if reading lazily, make sure to only read in up to buffer's size
+    Integer lazyRead(ByteBuffer buffer) {
+        if (exists size) {
+            return nothing;
+        } else {
+            return nothing;
+        }
+    }
+    
+    shared actual Integer read(ByteBuffer buffer) {
+        if (exists body) {
+            // TODO 
+            return nothing;
+        } else {
+            return lazyRead(buffer);
+        }
+    }
 }
 
 shared class Response() extends Message(nothing) {
