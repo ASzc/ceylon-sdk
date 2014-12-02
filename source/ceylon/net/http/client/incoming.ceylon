@@ -154,14 +154,14 @@ shared Response receive(FileDescriptor sender) {
     Integer status = expectDigit() * 100 + expectDigit() * 10 + expectDigit();
     expectBytes { space };
     // Reason phrase, ex: OK
-    String reason = readString{cr}[0];
+    String reason = readString { cr }[0];
     // \r already read by readString(), read the \n still present
     expectBytes { lf };
     
     // Headers
     value headerMap = HashMap<String,LinkedList<String>>();
     while (true) {
-        value nameOrTerm = readString{headerSep, cr};
+        value nameOrTerm = readString { headerSep, cr };
         String name = nameOrTerm[0].trimmed.lowercased;
         Byte termChar = nameOrTerm[1];
         // End of headers?
@@ -179,7 +179,7 @@ shared Response receive(FileDescriptor sender) {
             }
         }
         // Process header, merge if required
-        {String*} newValues = readString{cr}[0].split((ch) => ch in { ' ', '\t' });
+        {String*} newValues = readString { cr }[0].split((ch) => ch in { ' ', '\t' });
         if (exists values = headerMap.get(name)) {
             values.addAll(newValues);
         } else {
@@ -187,13 +187,22 @@ shared Response receive(FileDescriptor sender) {
         }
     }
     
+    // TODO maybe just provide an immutable map, since they are deduplicated anyway?
     Header[] headers = [for (name->values in headerMap) Header(capitaliseHeaderName(name), *values)];
     
     Response incoming = nothing;
     return incoming;
 }
 
-// TODO handle lazy yielding of the socket
+shared class BodyReader(FileDescriptor sender, Anything(FileDescriptor) yielder, Boolean lazy, Boolean chunked) {
+    
+    // TODO if not lazy, read immediately
+    
+    // TODO if chunked, expect C.T.E.
+    
+    // TODO when done reading, yield sender with yielder
+}
+
 shared class Response() extends Message(nothing) {
     shared Integer code = nothing;
     // TODO include redirect [Response*] history here
