@@ -196,6 +196,9 @@ shared Response receive(FileDescriptor sender) {
     return incoming;
 }
 
+shared class ChunkedEntityReader() {
+}
+
 shared class BodyReader(sender, yield, lazy, size = null) extends Reader() {
     FileDescriptor sender;
     "Function to call when done reading the body"
@@ -216,13 +219,13 @@ shared class BodyReader(sender, yield, lazy, size = null) extends Reader() {
             }
             
             body = b;
-            
-            yield(sender);
         } else {
             // TODO chunked transfer encoding
             
             body = nothing;
         }
+        yield(sender);
+        body.flip();
         return body;
     }
     
@@ -233,13 +236,19 @@ shared class BodyReader(sender, yield, lazy, size = null) extends Reader() {
         body = eagerRead();
     }
     
-    // TODO when done reading, yield sender
-    
     // TODO if reading lazily, make sure to only read in up to buffer's size
     Integer lazyRead(ByteBuffer buffer) {
         if (exists size) {
-            return nothing;
+            Integer available = buffer.available;
+            Integer amountRead = sender.read(buffer);
+            if (amountRead < available) {
+                yield(sender);
+            }
+            return amountRead;
         } else {
+            // TODO chunked transfer encoding
+            
+            // TODO when done reading, yield sender
             return nothing;
         }
     }
