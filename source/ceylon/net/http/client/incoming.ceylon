@@ -1,7 +1,8 @@
 import ceylon.collection {
     HashMap,
     HashSet,
-    LinkedList
+    LinkedList,
+    unmodifiableMap
 }
 import ceylon.io {
     FileDescriptor
@@ -81,15 +82,23 @@ Byte cr = '\r'.integer.byte;
 Byte lf = '\n'.integer.byte;
 Byte headerSep = ':'.integer.byte;
 
+// ((0 * 10 + 3) * 10 + 2) * 10 + 1 = 321
+Integer base10accumulator(Integer partial, Byte element) {
+    // #30 == '0'
+    return 10 * partial + (element.signed - #30);
+}
+
+Integer base16accumulator(Integer partial, Byte element) {
+    return nothing; // TODO
+}
+
 by ("Alex Szczuczko", "Stéphane Épardaud")
 shared Response receive(FileDescriptor sender) {
     value reader = FileDescriptorReader(sender);
     
-    "Message must be parsed with ASCII for security reasons, as per [RFC 7230]
-     (https://tools.ietf.org/rfcmarkup?doc=7230#section-3). However, UTF-8
-     decoding is ok when not using it for element deliniation."
-    value decoder = utf8.Decoder();
-    
+    //
+    // "Expect", either wholly known values, or known length
+    //
     void expectBytes({Byte*} expected) {
         for (char in expected) {
             if (exists b = reader.readByte()) {
@@ -101,7 +110,6 @@ shared Response receive(FileDescriptor sender) {
             }
         }
     }
-    
     Byte expectByteIn(Set<Byte> expected) {
         if (exists b = reader.readByte()) {
             if (!b in expected) {
@@ -112,11 +120,21 @@ shared Response receive(FileDescriptor sender) {
             throw UnexpectedCharacter(null, expected);
         }
     }
-    
-    Integer expectDigit() {
-        return expectByteIn(digit).signed - #30; // '0'
+    Integer expectNumerical(expected, length, accumulator) {
+        Set<Byte> expected;
+        Integer length;
+        Integer(Integer, Byte) accumulator;
+        
+        return { for (i in 0:length) expectByteIn(expected) }.fold(0)(accumulator);
     }
     
+    //
+    // "Read", unknown length values
+    //
+    "Message must be parsed with ASCII for security reasons, as per [RFC 7230]
+     (https://tools.ietf.org/rfcmarkup?doc=7230#section-3). However, UTF-8
+     decoding is ok when not using it for element deliniation."
+    value decoder = utf8.Decoder();
     value buffer = newByteBuffer(1024);
     void pushToBuffer(Byte byte) {
         // grow the buffer if required
@@ -126,14 +144,14 @@ shared Response receive(FileDescriptor sender) {
         // save the byte
         buffer.putByte(byte);
     }
-    [String, Byte] readString({Byte*} terminatedBy) {
-        Byte read() {
-            if (exists b = reader.readByte()) {
-                return b;
-            } else {
-                throw ParseException("Premature EOF while reading string");
-            }
+    Byte read() {
+        if (exists b = reader.readByte()) {
+            return b;
+        } else {
+            throw ParseException("Premature EOF while reading sequence");
         }
+    }
+    [String, Byte] readString({Byte*} terminatedBy) {
         buffer.clear();
         variable Byte byte = read();
         while (!byte in terminatedBy) {
@@ -144,27 +162,44 @@ shared Response receive(FileDescriptor sender) {
         decoder.decode(buffer);
         return [decoder.consume(), byte];
     }
+    Integer readNumerical(terminatedBy, expected, accumulator) {
+        Byte terminatedBy;
+        Set<Byte> expected;
+        Integer(Integer, Byte) accumulator;
+        
+        buffer.clear();
+        variable Byte byte = read();
+        while (!byte == terminatedBy) {
+            pushToBuffer(byte);
+            byte = read();
+        }
+        buffer.flip();
+        return buffer.fold(0)(accumulator);
+    }
     
     // Status line, ex: HTTP/1.1 200 OK\r\n
     // HTTP version, ex: HTTP/1.1
     expectBytes(statusHttp);
-    Integer major = expectDigit();
+    Integer major = expectNumerical(digit, 1, base10accumulator);
     expectBytes { versionPoint };
-    Integer minor = expectDigit();
+    Integer minor = expectNumerical(digit, 1, base10accumulator);
     expectBytes { space };
     // Status code, ex: 200
-    Integer status = expectDigit() * 100 + expectDigit() * 10 + expectDigit();
+    // Integer status = expectDigit() * 100 + expectDigit() * 10 + expectDigit();
+    Integer status = expectNumerical(digit, 3, base10accumulator);
     expectBytes { space };
     // Reason phrase, ex: OK
     String reason = readString { cr }[0];
     // \r already read by readString(), read the \n still present
     expectBytes { lf };
     
-    // Headers
+    // Headers, ex: Content-Type: text/html; charset=UTF-8\r\n
     value headerMap = HashMap<String,LinkedList<String>>();
     while (true) {
         value nameOrTerm = readString { headerSep, cr };
+        // Header Field Name, ex: Content-Type
         String name = nameOrTerm[0].trimmed.lowercased;
+        // If termChar is cr, then we expect name to be blank, ex: \r\n\r\n
         Byte termChar = nameOrTerm[1];
         // End of headers?
         if (termChar == cr) {
@@ -180,8 +215,11 @@ shared Response receive(FileDescriptor sender) {
                 // TODO throw exception, blank header name
             }
         }
-        // Process header, merge if required
-        {String*} newValues = readString { cr }[0].split((ch) => ch in { ' ', '\t' });
+        // Header Field Value, ex: text/html; charset=UTF-8
+        // Comma seperated, as per RFC
+        {String*} newValues = readString { cr }[0].split((ch) => ch == ',').map((element) => element.trimmed);
+        // Combine headers with same name based on comma seperated value interpretation:
+        // http://tools.ietf.org/rfcmarkup?doc=7230#section-3.2.2
         if (exists values = headerMap.get(name)) {
             values.addAll(newValues);
         } else {
@@ -189,17 +227,22 @@ shared Response receive(FileDescriptor sender) {
         }
     }
     
-    // TODO maybe just provide an immutable map, since they are deduplicated anyway?
-    Header[] headers = [for (name->values in headerMap) Header(capitaliseHeaderName(name), *values)];
+    // TODO call capitaliseHeaderName
+    value headers = unmodifiableMap(headerMap);
+    
+    value body = BodyReader {
+        sender;
+        nothing;
+        nothing;
+        nothing;
+        readNumerical;
+    };
     
     Response incoming = nothing;
     return incoming;
 }
 
-shared class ChunkedEntityReader() {
-}
-
-shared class BodyReader(sender, yield, lazy, size = null) extends Reader() {
+shared class BodyReader(sender, yield, lazy, size, readNumerical) extends Reader() {
     FileDescriptor sender;
     "Function to call when done reading the body"
     Anything(FileDescriptor) yield;
@@ -207,6 +250,7 @@ shared class BodyReader(sender, yield, lazy, size = null) extends Reader() {
     shared Boolean lazy;
     "Null implies chunked transfer"
     shared Integer? size;
+    Integer(Byte, Set<Byte>, Integer(Integer, Byte)) readNumerical;
     
     ByteBuffer eagerRead() {
         ByteBuffer body;
