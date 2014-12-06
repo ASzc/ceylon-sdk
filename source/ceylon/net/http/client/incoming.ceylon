@@ -236,13 +236,14 @@ shared Response receive(FileDescriptor sender) {
         nothing;
         nothing;
         readNumerical;
+        expectBytes;
     };
     
     Response incoming = nothing;
     return incoming;
 }
 
-shared class BodyReader(sender, yield, lazy, size, readNumerical) extends Reader() {
+shared class BodyReader(sender, yield, lazy, size, readNumerical, expectBytes) extends Reader() {
     FileDescriptor sender;
     "Function to call when done reading the body"
     Anything(FileDescriptor) yield;
@@ -251,6 +252,7 @@ shared class BodyReader(sender, yield, lazy, size, readNumerical) extends Reader
     "Null implies chunked transfer"
     shared Integer? size;
     Integer(Byte, Set<Byte>, Integer(Integer, Byte)) readNumerical;
+    Anything({Byte*}) expectBytes;
     
     ByteBuffer eagerRead() {
         ByteBuffer body;
@@ -261,12 +263,23 @@ shared class BodyReader(sender, yield, lazy, size, readNumerical) extends Reader
             if (size != bytesRead) {
                 // TODO throw exception, body size didn't match (smaller?)
             }
-            
             body = b;
         } else {
-            // TODO chunked transfer encoding
-            
-            body = nothing;
+            ByteBuffer b = newByteBuffer(0);
+            while (true) {
+                Integer chunkLength = readNumerical(cr, hexDigit, base16accumulator);
+                expectBytes({ lf });
+                if (chunkLength == 0) {
+                    expectBytes({ cr, lf });
+                    break;
+                }
+                b.resize(b.capacity + chunkLength, true);
+                Integer bytesRead = sender.read(b);
+                if (chunkLength != bytesRead) {
+                    // TODO throw exception, chunk size didn't match (smaller?)
+                }
+            }
+            body = b;
         }
         yield(sender);
         body.flip();
@@ -280,7 +293,11 @@ shared class BodyReader(sender, yield, lazy, size, readNumerical) extends Reader
         body = eagerRead();
     }
     
-    // TODO if reading lazily, make sure to only read in up to buffer's size
+    ByteBuffer? readChunk() {
+        return nothing;
+    }
+    
+    variable ByteBuffer? latestChunk = null;
     Integer lazyRead(ByteBuffer buffer) {
         if (exists size) {
             Integer available = buffer.available;
@@ -291,6 +308,32 @@ shared class BodyReader(sender, yield, lazy, size, readNumerical) extends Reader
             return amountRead;
         } else {
             // TODO chunked transfer encoding
+            // TODO transfer up to requestedAmount
+            while (buffer.available > 0) {
+                if (exists lc = latestChunk) {
+                    Integer requestedBytes = buffer.available;
+                    Integer leftoverBytes = lc.available;
+                    
+                    Integer transferAmount = min { leftoverBytes, requestedBytes };
+                    for (i in 0:transferAmount) {
+                        buffer.put(lc.get());
+                    }
+                    
+                    if (leftoverBytes <= requestedBytes) {
+                        latestChunk = null;
+                    }
+                }
+                
+                if (!latestChunk exists) {
+                    ByteBuffer? newChunk = readChunk();
+                    if (exists newChunk) {
+                        latestChunk = newChunk;
+                    } else {
+                        // TODO need to return -1 if nothing read
+                        break;
+                    }
+                }
+            }
             
             // TODO when done reading, yield sender
             return nothing;
