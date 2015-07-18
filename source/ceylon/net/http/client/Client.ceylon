@@ -58,6 +58,7 @@ shared Map<String,Integer> defaultSchemePorts = createDefaultSchemePorts();
 shared alias Headers => Map<String,String|{String*}?>;
 shared alias Parameters => Map<String,String?>;
 shared alias Body => Parameters|FileDescriptor|<ByteBuffer?>()|<String?>()|ByteBuffer|String?;
+shared alias ChunkReceiver => Anything(String)|Anything(ByteBuffer, Charset?)|FileDescriptor?;
 
 "For sending HTTP messages to servers and receiving replies."
 shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePorts) {
@@ -85,6 +86,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
         headers = emptyMap,
         body = null,
         bodyCharset = null,
+        chunkReceiver = null,
         maxRedirects = 10) {
         "HTTP method to use for the request."
         Method method;
@@ -147,6 +149,13 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
         "The charset of the [[body]]. This will overwrite any charset parameter of
          the `Content-Type` header in [[headers]]."
         Charset|String? bodyCharset;
+        "If this exists, the body chunks of the response from the server will be
+         sent to [[chunkReceiver]] instead of being buffered and returned with
+         the [[Response]].
+         
+         Using this is strongly recommended if you expect the server will
+         return a large response to the request."
+        ChunkReceiver chunkReceiver;
         "If the response status code is in the [300 series]
          (https://en.wikipedia.org/wiki/List_of_HTTP_status_codes#3xx_Redirection)
          then the redirect(s) will be followed up to the depth specified here.
@@ -238,12 +247,14 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
         headers = emptyMap,
         body = null,
         bodyCharset = null,
+        chunkReceiver = null,
         maxRedirects = 10) {
         Uri|String uri;
         Parameters parameters;
         Headers headers;
         Body body;
         Charset|String? bodyCharset;
+        ChunkReceiver chunkReceiver;
         Integer maxRedirects;
         return request(getMethod, uri, parameters, headers, body, bodyCharset, maxRedirects);
     }
@@ -253,12 +264,14 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
         headers = emptyMap,
         body = null,
         bodyCharset = null,
+        chunkReceiver = null,
         maxRedirects = 10) {
         Uri|String uri;
         Parameters parameters;
         Headers headers;
         Body body;
         Charset|String? bodyCharset;
+        ChunkReceiver chunkReceiver;
         Integer maxRedirects;
         return request(postMethod, uri, parameters, headers, body, bodyCharset, maxRedirects);
     }
