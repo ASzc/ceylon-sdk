@@ -53,6 +53,10 @@ Map<String,Integer> createDefaultSchemePorts() {
 }
 shared Map<String,Integer> defaultSchemePorts = createDefaultSchemePorts();
 
+shared alias Headers => Map<String,String|{String*}?>;
+shared alias Parameters => Map<String,String?>;
+shared alias Body => Parameters|FileDescriptor|<ByteBuffer|String?>()|ByteBuffer|String?;
+
 "For sending HTTP messages to servers and receiving replies."
 shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePorts) {
     "Used to get the [[Socket]]s required for the requests."
@@ -75,19 +79,18 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                                            definition.")
     shared Message request(method,
         uri,
-        parameters = empty,
-        headers = empty,
-        data = null,
+        parameters = emptyMap,
+        headers = emptyMap,
+        body = null,
         maxRedirects = 10) {
         "HTTP method to use for the request."
         Method method;
-        "URI to use. The scheme must be supported by [[poolManager]] and in
+        "URI to use. The scheme must be supported by [[poolManager]], and in
          [[defaultSchemePorts]] if [[uri]] doesn't specify a port value."
         Uri|String uri;
-        "Parameters to include with the request. If [[method]] is get, then
-         they will be appended to the [[uri]]'s query parameters. If [[method]]
-         is post, then they will be used as the request body, see [[data]]."
-        {Parameter*} parameters;
+        "Parameters to include with the request. They will be appended to the
+         [[uri]]'s query parameters."
+        Parameters parameters;
         "Headers to include with the request. They will be encoded with
          [[ceylon.io.charset::utf8]], which degrades to ASCII. Note that some
          servers may only accept ASCII header characters, so be cautious when
@@ -106,17 +109,18 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
          - `User-Agent` = `Ceylon/1.2`
          
          For the `Content-Type` header:
-         - if [[data]] is the body, and it is null, the header will not be set.
-         - if a type name is present in the header value, it will be preserved.
-         - if a type name is missing, it will be determined from the body (see
-         [[data]]). If [[parameters]] is the body, the type name will be set to
-         `application/x-www-form-urlencoded`. If [[data]] is the body,
-         [[String]] defaults to `text/plain`, [[ByteBuffer]] or
-         [[FileDescriptor]] defaults to `application/octet-stream`.
+         - if [[body]] is [[null]], the header will not be provided.
+         - if the header is specified and a type name is present in its value,
+         it will be preserved.
+         - if the header is unspecified or if a type name is missing, it will
+         be determined from the [[body]] type.
+         `application/x-www-form-urlencoded` for [[Parameters]], `text/plain`
+         for [[String]], and `application/octet-stream` for [[ByteBuffer]] or
+         [[FileDescriptor]].
          - if a charset parameter is present in the header value, it will be
          preserved.
-         - if a charset parameter is missing, and the body must be encoded
-         (see [[data]]), the charset parameter will be defaulted to `UTF-8`.
+         - if the header is unspecified or if a charset parameter is missing,
+         and the body must be encoded, it will be set to `UTF-8`.
          
          The charset parameter of the `Content-Type` header will be parsed
          and used to encode the message body if required. Its value must be one
@@ -125,18 +129,18 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
          The `Content-Length` and `Transfer-Encoding` headers should not be set
          by the user, and will be overriden as required to create a compliant
          HTTP message."
-        {Header*} headers;
+        Headers headers;
         "Data to include in the request body. Usually this is [[null]] for
-         idempotent methods (GET, HEAD, etc.), but it does not have to be.
+         [safe](https://tools.ietf.org/html/rfc7231#page-22) methods (GET,
+         HEAD, etc.), but it does not have to be.
          
-         If [[parameters]] is not empty, and [[method]] is post, then the
-         parameters will be used instead of this value. [[String]] values will
-         be encoded with the charset parameter of the `Content-Type` header,
-         see [[headers]].
+         Non-binary values will be encoded with the charset parameter of the
+         `Content-Type` header, see [[headers]].
          
          [[FileDescriptor]]s will be read in manageable pieces and sent using
-         chunked transfer encoding."
-        FileDescriptor|ByteBuffer|String? data;
+         chunked transfer encoding. Similarly, each returned piece from a body
+         function will be sent as chunks, until [[null]] is returned."
+        Body body;
         "If the response status code is in the [300 series]
          (https://en.wikipedia.org/wiki/List_of_HTTP_status_codes#3xx_Redirection)
          then the redirect(s) will be followed up to the depth specified here.
@@ -174,7 +178,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                     parsedUri.queryPart;
                     parameters;
                     headers;
-                    data;
+                    body;
                 };
                 try {
                     variable Exception? error = null;
@@ -207,6 +211,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                     // TODO change return to Message subtype Response, store any redirects in [Response*] attribute of Response
                     
                     // TODO how to handle a streaming response body? Would have to return the lease later after it is done being read.
+                    // TODO ^^^^ have parameter with a chunk callback or a stream to write the chunks into?
                     
                     return response;
                 } finally {
@@ -221,29 +226,29 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
     }
     
     shared Message get(uri,
-        parameters = empty,
-        headers = empty,
-        data = null,
+        parameters = emptyMap,
+        headers = emptyMap,
+        body = null,
         maxRedirects = 10) {
         Uri|String uri;
-        {Parameter*} parameters;
-        {Header*} headers;
-        FileDescriptor|ByteBuffer|String? data;
+        Parameters parameters;
+        Headers headers;
+        Body body;
         Integer maxRedirects;
-        return request(getMethod, uri, parameters, headers, data, maxRedirects);
+        return request(getMethod, uri, parameters, headers, body, maxRedirects);
     }
     
     shared Message post(uri,
-        parameters = empty,
-        headers = empty,
-        data = null,
+        parameters = emptyMap,
+        headers = emptyMap,
+        body = null,
         maxRedirects = 10) {
         Uri|String uri;
-        {Parameter*} parameters;
-        {Header*} headers;
-        FileDescriptor|ByteBuffer|String? data;
+        Parameters parameters;
+        Headers headers;
+        Body body;
         Integer maxRedirects;
-        return request(postMethod, uri, parameters, headers, data, maxRedirects);
+        return request(postMethod, uri, parameters, headers, body, maxRedirects);
     }
     
     // TODO ...

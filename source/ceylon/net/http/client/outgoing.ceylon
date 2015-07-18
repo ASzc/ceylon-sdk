@@ -65,16 +65,16 @@ shared [ByteBuffer, FileDescriptor|ByteBuffer?] buildMessage(
     host,
     path,
     query,
-    parameters = empty,
-    headers = empty,
+    parameters = emptyMap,
+    headers = emptyMap,
     data = null) {
     Method method;
     String host;
     String path;
     String? query;
-    {Parameter*} parameters;
-    {Header*} headers;
-    FileDescriptor|ByteBuffer|String? data;
+    Parameters parameters;
+    Headers headers;
+    Body data;
     
     // message prefix
     value builder = StringBuilder();
