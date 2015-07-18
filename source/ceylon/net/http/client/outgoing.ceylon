@@ -15,66 +15,90 @@ import ceylon.io.charset {
 }
 import ceylon.net.http {
     Method,
-    Header,
-    postMethod=post,
     capitaliseHeaderName
 }
 import ceylon.net.uri {
-    Parameter
+    percentEncoder
 }
 
 shared String terminator = "\r\n";
 
-shared void externaliseParameters(StringBuilder builder, {Parameter*} parameters) {
+shared void externaliseParameters(StringBuilder builder, Parameters parameters) {
     variable Boolean addPrefix = false;
-    for (parameter in parameters) {
+    for (name->rawVal in parameters) {
         if (addPrefix) {
             builder.append("&");
         }
         addPrefix = true;
-        builder.append(parameter.toRepresentation(false));
+        
+        builder.append(percentEncoder.encodePathSegmentParamName(name));
+        if (exists String val = rawVal) {
+            builder.append("=")
+                .append(percentEncoder.encodePathSegmentParamValue(val));
+        }
     }
 }
 
-shared void writeBody(receiver, body) {
-    FileDescriptor receiver;
-    FileDescriptor|ByteBuffer? body;
-    
+void writeChunk(FileDescriptor output, ByteBuffer chunk) {
+    // Transfer-Encoding: chunked header should already be set
+    Integer length = chunk.available;
+    // Can't be zero length, as that is specified as the termination chunk
+    if (length > 0) {
+        String lengthHex = formatInteger(length, 16);
+        output.writeFully(utf8.encode(lengthHex + terminator));
+        output.writeFully(chunk);
+        output.writeFully(utf8.encode(terminator));
+    }
+}
+
+void writeTerminationChunk(FileDescriptor output) {
+    output.writeFully(utf8.encode("0" + terminator + terminator));
+}
+
+shared void noopBodyWriter(FileDescriptor output) {
+}
+
+shared void binaryBodyWriter(FileDescriptor|ByteBuffer?()|ByteBuffer body)(FileDescriptor output) {
     if (is FileDescriptor body) {
-        // Transfer-Encoding: chunked header should already be set
-        body.readFully(void(ByteBuffer buffer) {
-                Integer length = buffer.available;
-                // Can't be zero length, as that is specified as the terminating chunk
-                if (length > 0) {
-                    String lengthHex = formatInteger(length, 16);
-                    receiver.writeFully(utf8.encode(lengthHex + terminator));
-                    receiver.writeFully(buffer);
-                    receiver.writeFully(utf8.encode(terminator));
-                }
+        body.readFully(void(ByteBuffer chunk) {
+                writeChunk(output, chunk);
             });
-        // Terminating zero-length chunk
-        receiver.writeFully(utf8.encode("0" + terminator + terminator));
-    } else if (is ByteBuffer body) {
-        receiver.writeFully(body);
+        writeTerminationChunk(output);
+    } else if (is ByteBuffer?() body) {
+        while (exists chunk = body()) {
+            writeChunk(output, chunk);
+        }
+        writeTerminationChunk(output);
+    } else {
+        output.writeFully(body);
     }
-    // else null: write nothing
 }
 
-shared [ByteBuffer, FileDescriptor|ByteBuffer?] buildMessage(
+shared void encodingBodyWriter(String?() body, Charset charset)(FileDescriptor output) {
+    while (exists chunkText = body()) {
+        ByteBuffer chunk = charset.encode(chunkText);
+        writeChunk(output, chunk);
+    }
+    writeTerminationChunk(output);
+}
+
+shared [ByteBuffer, Anything(FileDescriptor)] buildMessage(
     method,
     host,
     path,
     query,
     parameters = emptyMap,
     headers = emptyMap,
-    data = null) {
+    body = null,
+    bodyCharset = null) {
     Method method;
     String host;
     String path;
     String? query;
     Parameters parameters;
     Headers headers;
-    Body data;
+    Body body;
+    Charset|String? bodyCharset;
     
     // message prefix
     value builder = StringBuilder();
@@ -97,7 +121,7 @@ shared [ByteBuffer, FileDescriptor|ByteBuffer?] buildMessage(
     } else {
         queryParamsAdded = false;
     }
-    if (!parameters.empty && method == get) {
+    if (!parameters.empty) {
         if (!queryParamsAdded) {
             builder.append("?");
         } else {
@@ -111,119 +135,159 @@ shared [ByteBuffer, FileDescriptor|ByteBuffer?] buildMessage(
         .append("HTTP/1.1")
         .append(terminator);
     
-    String? postParameters;
-    if (!parameters.empty && method == postMethod) {
-        value paramBuilder = StringBuilder();
-        externaliseParameters(paramBuilder, parameters);
-        postParameters = paramBuilder.string;
-    } else {
-        postParameters = null;
-    }
-    
-    // headers
+    // Process Headers
     // Header semantics are a bit odd, so it seems cleanest to do late processing on them like this
     value processedHeaders = HashMap<String,LinkedList<String>>();
-    for (header in headers) {
+    for (rawName->val in headers) {
+        String name = capitaliseHeaderName(rawName);
+        
         // Combine headers with same name based on comma seperated value interpretation:
         // http://tools.ietf.org/rfcmarkup?doc=7230#section-3.2.2
-        if (exists values = processedHeaders.get(header.name.lowercased)) {
-            values.addAll(header.values);
+        if (exists values = processedHeaders.get(name)) {
+            switch (val)
+            case (is {String*}) {
+                values.addAll(val);
+            }
+            case (is String) {
+                values.addAll { val };
+            }
+            case (null) {}
         } else {
-            processedHeaders.put(header.name.lowercased, LinkedList<String>(header.values));
+            switch (val)
+            case (is {String*}) {
+                processedHeaders.put(name, LinkedList<String>(val));
+            }
+            case (is String) {
+                processedHeaders.put(name, LinkedList<String> { val });
+            }
+            case (null) {
+                processedHeaders.put(name, LinkedList<String> { });
+            }
         }
     }
-    for (defaultName->defaultValue in { "host"->host,
-        "accept"->"*/*",
-        "accept-charset"->"UTF-8",
-        "user-agent"->"Ceylon/1.2" }) {
+    // Add default Headers
+    for (defaultName->defaultValue in { "Host"->host,
+        "Accept"->"*/*",
+        "Accept-Charset"->"UTF-8",
+        "User-Agent"->"Ceylon/1.2" }) {
         if (!processedHeaders.defines(defaultName)) {
             processedHeaders.put(defaultName, LinkedList<String> { defaultValue });
         }
     }
     
-    // https://tools.ietf.org/html/rfc7231#section-3.1.1.5
-    String? defaultTypeName;
-    String? defaultTypeCharset;
-    if (postParameters exists) {
-        defaultTypeName = "application/x-www-form-urlencoded";
-        defaultTypeCharset = "UTF-8";
-    } else if (data is FileDescriptor) {
-        defaultTypeName = "application/octet-stream";
-        defaultTypeCharset = null;
-    } else if (data is ByteBuffer) {
-        defaultTypeName = "application/octet-stream";
-        defaultTypeCharset = null;
-    } else if (data is String) {
-        defaultTypeName = "text/plain";
-        defaultTypeCharset = "UTF-8";
-    } else {
-        defaultTypeName = null;
-        defaultTypeCharset = null;
+    // Charset handling
+    Charset? parsedBodyCharset;
+    switch (bodyCharset)
+    case (is Charset) {
+        parsedBodyCharset = bodyCharset;
     }
-    Charset? bodyCharset;
-    if (exists defaultTypeName) {
-        String contentTypeName;
-        String? contentTypeCharset;
-        
-        if (exists values = processedHeaders.get("content-type"),
-            exists val = values.last,
-            nonempty typeNameAndParams = [for (p in val.split((ch) => ch == ';')) p]) {
-            contentTypeName = typeNameAndParams.first;
-            String[] params = typeNameAndParams.spanFrom(1);
-            if (exists charsetParam = params.findLast((elem) => elem.trimmed.startsWith("charset=")),
-                exists charsetParamValue = charsetParam.split((ch) => ch == '=').getFromFirst(1)) {
-                contentTypeCharset = charsetParamValue.trimmed;
-            } else {
-                contentTypeCharset = defaultTypeCharset;
-            }
-        } else {
-            contentTypeName = defaultTypeName;
-            contentTypeCharset = defaultTypeCharset;
-        }
-        
-        String contentTypeValue;
-        if (exists contentTypeCharset) {
-            contentTypeValue = "``contentTypeName``; charset=``contentTypeCharset``";
-            bodyCharset = getCharset(contentTypeCharset);
-        } else {
-            contentTypeValue = contentTypeName;
-            bodyCharset = null;
-        }
-        processedHeaders.put("content-type", LinkedList<String> { contentTypeValue });
-    } else {
-        bodyCharset = null;
+    case (is String) {
+        parsedBodyCharset = getCharset(bodyCharset);
+    }
+    case (null) {
+        parsedBodyCharset = null;
     }
     
-    FileDescriptor|ByteBuffer? body;
-    Integer? bodySize;
-    if (exists postParameters) {
-        assert (exists bodyCharset);
-        value buffer = bodyCharset.encode(postParameters);
-        bodySize = buffer.available;
-        body = buffer;
-    } else if (is FileDescriptor data) {
-        body = data;
-        bodySize = null;
-    } else if (is ByteBuffer data) {
-        body = data;
-        bodySize = data.available;
-    } else if (is String data) {
-        assert (exists bodyCharset);
-        value buffer = bodyCharset.encode(data);
-        bodySize = buffer.available;
-        body = buffer;
+    // Read Content-Type, resolve type and charset
+    String contentTypeName;
+    Charset? contentTypeCharset;
+    if (exists values = processedHeaders.get("Content-Type"),
+        exists val = values.last) {
+        // Store Content-Type type name
+        {String+} typeNameAndParams = val.split((ch) => ch == ';');
+        contentTypeName = typeNameAndParams.first;
+        
+        // Read any available parameters of Content-Type
+        {String*} params = typeNameAndParams.rest;
+        if (exists charsetParam = params.findLast((elem) => elem.trimmed.startsWith("charset=")),
+            exists charsetParamValue = charsetParam.split((ch) => ch == '=').getFromFirst(1)) {
+            contentTypeCharset = getCharset(charsetParamValue.trimmed[1 : -1]);
+        } else {
+            if (body is Parameters) {
+                contentTypeCharset = parsedBodyCharset else utf8;
+            } else if (body is <String?>()) {
+                contentTypeCharset = parsedBodyCharset else utf8;
+            } else if (body is String) {
+                contentTypeCharset = parsedBodyCharset else utf8;
+            } else {
+                contentTypeCharset = parsedBodyCharset;
+            }
+        }
     } else {
-        body = null;
+        if (body is Parameters) {
+            contentTypeName = "application/x-www-form-urlencoded";
+            contentTypeCharset = parsedBodyCharset else utf8;
+        } else if (body is <String?>()) {
+            contentTypeName = "text/plain";
+            contentTypeCharset = parsedBodyCharset else utf8;
+        } else if (body is String) {
+            contentTypeName = "text/plain";
+            contentTypeCharset = parsedBodyCharset else utf8;
+        } else {
+            contentTypeName = "application/octet-stream";
+            contentTypeCharset = parsedBodyCharset;
+        }
+    }
+    
+    // (Over)write Content-Type if there is a body
+    if (!body is Null) {
+        String contentTypeValue;
+        if (exists contentTypeCharset) {
+            contentTypeValue = "``contentTypeName``; charset=``contentTypeCharset.name``";
+        } else {
+            contentTypeValue = contentTypeName;
+        }
+        processedHeaders.put("Content-Type", LinkedList<String> { contentTypeValue });
+    }
+    
+    // Prepare body writer
+    // Need to do this now, since body length may be needed for the headers
+    Anything(FileDescriptor) bodyWriter;
+    Integer? bodySize;
+    if (is Parameters body) {
+        assert (exists contentTypeCharset);
+        
+        StringBuilder paramBuilder = StringBuilder();
+        externaliseParameters(paramBuilder, body);
+        // Encode now, since we need to specify byte length
+        ByteBuffer buffer = contentTypeCharset.encode(paramBuilder.string);
+        
+        bodyWriter = binaryBodyWriter(buffer);
+        bodySize = buffer.available;
+    } else if (is String body) {
+        assert (exists contentTypeCharset);
+        
+        // Encode now, since we need to specify byte length
+        ByteBuffer buffer = contentTypeCharset.encode(body);
+        
+        bodyWriter = binaryBodyWriter(buffer);
+        bodySize = buffer.available;
+    } else if (is <String?>() body) {
+        assert (exists contentTypeCharset);
+        
+        // Strings will be encoded for each chunk
+        bodyWriter = encodingBodyWriter(body, contentTypeCharset);
+        bodySize = null;
+    } else if (is ByteBuffer body) {
+        bodyWriter = binaryBodyWriter(body);
+        bodySize = body.available;
+    } else if (is FileDescriptor|ByteBuffer?() body) {
+        bodyWriter = binaryBodyWriter(body);
+        bodySize = null;
+    } else {
+        bodyWriter = noopBodyWriter;
         bodySize = 0;
     }
     
     if (exists bodySize) {
-        processedHeaders.put("content-length", LinkedList<String> { bodySize.string });
+        processedHeaders.put("Content-Length", LinkedList<String> { bodySize.string });
+        processedHeaders.remove("Transfer-Encoding");
     } else {
-        processedHeaders.remove("content-length");
-        processedHeaders.put("transfer-encoding", LinkedList<String> { "chunked" });
+        processedHeaders.remove("Content-Length");
+        processedHeaders.put("Transfer-Encoding", LinkedList<String> { "chunked" });
     }
     
+    // Write headers
     for (headerName->headerValues in processedHeaders) {
         if (!headerValues.empty) {
             builder.append(capitaliseHeaderName(headerName));
@@ -241,5 +305,7 @@ shared [ByteBuffer, FileDescriptor|ByteBuffer?] buildMessage(
     }
     builder.append(terminator);
     
-    return [utf8.encode(builder.string), body];
+    ByteBuffer messagePreamble = utf8.encode(builder.string);
+    
+    return [messagePreamble, bodyWriter];
 }

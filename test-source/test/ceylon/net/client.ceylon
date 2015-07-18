@@ -53,7 +53,7 @@ shared class BuildMessageTest() {
             null;
             {};
             {};
-            data = "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ";
+            body = "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ";
         };
         assertEquals {
             utf8.decode(message[0]);
@@ -81,7 +81,7 @@ shared class BuildMessageTest() {
             null;
             {};
             { contentType("text/plain", utf16) };
-            data = "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ";
+            body = "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ";
         };
         assertEquals {
             utf8.decode(message[0]);
@@ -109,7 +109,7 @@ shared class BuildMessageTest() {
             null;
             {};
             {};
-            data = "testing 123";
+            body = "testing 123";
         };
         assertEquals {
             utf8.decode(message[0]);

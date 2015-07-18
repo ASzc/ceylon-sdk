@@ -9,18 +9,20 @@ import ceylon.io {
 import ceylon.io.buffer {
     ByteBuffer
 }
+import ceylon.io.charset {
+    Charset
+}
 import ceylon.net.http {
     Message,
     Method,
     getMethod=get,
-    postMethod=post,
-    Header
+    postMethod=post
 }
 import ceylon.net.uri {
     Uri,
-    parse,
-    Parameter
+    parse
 }
+
 import java.io {
     IOException
 }
@@ -55,7 +57,7 @@ shared Map<String,Integer> defaultSchemePorts = createDefaultSchemePorts();
 
 shared alias Headers => Map<String,String|{String*}?>;
 shared alias Parameters => Map<String,String?>;
-shared alias Body => Parameters|FileDescriptor|<ByteBuffer|String?>()|ByteBuffer|String?;
+shared alias Body => Parameters|FileDescriptor|<ByteBuffer?>()|<String?>()|ByteBuffer|String?;
 
 "For sending HTTP messages to servers and receiving replies."
 shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePorts) {
@@ -82,6 +84,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
         parameters = emptyMap,
         headers = emptyMap,
         body = null,
+        bodyCharset = null,
         maxRedirects = 10) {
         "HTTP method to use for the request."
         Method method;
@@ -135,12 +138,15 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
          HEAD, etc.), but it does not have to be.
          
          Non-binary values will be encoded with the charset parameter of the
-         `Content-Type` header, see [[headers]].
+         `Content-Type` header, or the value of [[bodyCharset]], if it exists.
          
          [[FileDescriptor]]s will be read in manageable pieces and sent using
          chunked transfer encoding. Similarly, each returned piece from a body
          function will be sent as chunks, until [[null]] is returned."
         Body body;
+        "The charset of the [[body]]. This will overwrite any charset parameter of
+         the `Content-Type` header in [[headers]]."
+        Charset|String? bodyCharset;
         "If the response status code is in the [300 series]
          (https://en.wikipedia.org/wiki/List_of_HTTP_status_codes#3xx_Redirection)
          then the redirect(s) will be followed up to the depth specified here.
@@ -171,7 +177,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                 
                 Pool pool = poolManager.poolFor(scheme, host, port);
                 Socket socket = pool.borrow();
-                [ByteBuffer, FileDescriptor|ByteBuffer?] message = buildMessage {
+                [ByteBuffer, Anything(FileDescriptor)] message = buildMessage {
                     method;
                     host;
                     parsedUri.pathPart;
@@ -179,6 +185,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                     parameters;
                     headers;
                     body;
+                    bodyCharset;
                 };
                 try {
                     variable Exception? error = null;
@@ -203,11 +210,12 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                         throw error else Exception("Unable to send message.");
                     }
                     // Write the body after we're fairly sure the socket is ok
-                    writeBody(socket, message[1]);
+                    message[1](socket);
                     
                     Message response = receive(socket);
                     
-                    // TODO process redirects if flag is true
+                    // TODO process redirects if flag is true.
+                    // TODO Probably won't be able to resend any body, which is ok for 303 (force GET) but maybe throw exception for non-303 redirect with non-resendable body?
                     // TODO change return to Message subtype Response, store any redirects in [Response*] attribute of Response
                     
                     // TODO how to handle a streaming response body? Would have to return the lease later after it is done being read.
@@ -229,26 +237,30 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
         parameters = emptyMap,
         headers = emptyMap,
         body = null,
+        bodyCharset = null,
         maxRedirects = 10) {
         Uri|String uri;
         Parameters parameters;
         Headers headers;
         Body body;
+        Charset|String? bodyCharset;
         Integer maxRedirects;
-        return request(getMethod, uri, parameters, headers, body, maxRedirects);
+        return request(getMethod, uri, parameters, headers, body, bodyCharset, maxRedirects);
     }
     
     shared Message post(uri,
         parameters = emptyMap,
         headers = emptyMap,
         body = null,
+        bodyCharset = null,
         maxRedirects = 10) {
         Uri|String uri;
         Parameters parameters;
         Headers headers;
         Body body;
+        Charset|String? bodyCharset;
         Integer maxRedirects;
-        return request(postMethod, uri, parameters, headers, body, maxRedirects);
+        return request(postMethod, uri, parameters, headers, body, bodyCharset, maxRedirects);
     }
     
     // TODO ...
