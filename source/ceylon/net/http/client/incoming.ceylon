@@ -19,9 +19,7 @@ import ceylon.io.readers {
     Reader
 }
 import ceylon.net.http {
-    Message,
-    Header,
-    capitaliseHeaderName
+    Message
 }
 
 shared class ParseException(String? description = null, Throwable? cause = null)
@@ -93,7 +91,7 @@ Integer base16accumulator(Integer partial, Byte element) {
 }
 
 by ("Alex Szczuczko", "Stéphane Épardaud")
-shared Response receive(FileDescriptor sender) {
+shared Response receive(FileDescriptor sender, ChunkReceiver? chunkReceiver) {
     value reader = FileDescriptorReader(sender);
     
     //

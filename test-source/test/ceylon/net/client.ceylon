@@ -1,22 +1,38 @@
+import ceylon.collection {
+    HashMap
+}
+import ceylon.io.buffer {
+    ByteBuffer,
+    newByteBuffer
+}
 import ceylon.io.charset {
     utf8,
     utf16
 }
 import ceylon.net.http {
     get,
-    post,
-    contentType
+    post
 }
 import ceylon.net.http.client {
     buildMessage
 }
 import ceylon.test {
     test,
-    assertNull,
     assertEquals
 }
-import ceylon.io.buffer {
-    ByteBuffer
+
+ByteBuffer collectChunks(Anything(Anything(ByteBuffer)) producer) {
+    ByteBuffer gather = newByteBuffer(0);
+    
+    void collect(ByteBuffer chunk) {
+        gather.resize(gather.capacity + chunk.available, true);
+        while (chunk.hasAvailable) {
+            gather.put(chunk.get());
+        }
+    }
+    producer(collect);
+    
+    return gather;
 }
 
 shared class BuildMessageTest() {
@@ -27,8 +43,8 @@ shared class BuildMessageTest() {
             "example.com";
             "/";
             null;
-            {};
-            {};
+            emptyMap;
+            emptyMap;
         };
         assertEquals {
             utf8.decode(message[0]);
@@ -37,11 +53,16 @@ shared class BuildMessageTest() {
                Accept: */*
                Accept-Charset: UTF-8
                User-Agent: Ceylon/1.2
+               Content-Length: 0
                
                """.replace("\n", "\r\n");
-            "Prefix";
+            "Preamble";
         };
-        assertNull(message[1], "Body");
+        assertEquals {
+            utf8.decode(collectChunks(message[1]));
+            "";
+            "Body";
+        };
     }
     
     test
@@ -51,8 +72,8 @@ shared class BuildMessageTest() {
             "example.com";
             "/";
             null;
-            {};
-            {};
+            emptyMap;
+            emptyMap;
             body = "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ";
         };
         assertEquals {
@@ -66,10 +87,13 @@ shared class BuildMessageTest() {
                Content-Length: 87
                
                """.replace("\n", "\r\n");
-            "Prefix";
+            "Preamble";
         };
-        assert (is ByteBuffer body = message[1]);
-        assertEquals(utf8.decode(body), "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ", "Body");
+        assertEquals {
+            utf8.decode(collectChunks(message[1]));
+            "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ";
+            "Body";
+        };
     }
     
     test
@@ -79,8 +103,8 @@ shared class BuildMessageTest() {
             "example.com";
             "/";
             null;
-            {};
-            { contentType("text/plain", utf16) };
+            emptyMap;
+            HashMap<String,String> { "content-type"->"text/plain; charset=utf-16" };
             body = "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ";
         };
         assertEquals {
@@ -94,10 +118,13 @@ shared class BuildMessageTest() {
                Content-Length: 58
                
                """.replace("\n", "\r\n");
-            "Prefix";
+            "Preamble";
         };
-        assert (is ByteBuffer body = message[1]);
-        assertEquals(utf16.decode(body), "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ", "Body");
+        assertEquals {
+            utf16.decode(collectChunks(message[1]));
+            "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ";
+            "Body";
+        };
     }
     
     test
@@ -107,8 +134,8 @@ shared class BuildMessageTest() {
             "example.com";
             "/";
             null;
-            {};
-            {};
+            emptyMap;
+            emptyMap;
             body = "testing 123";
         };
         assertEquals {
@@ -122,9 +149,12 @@ shared class BuildMessageTest() {
                Content-Length: 11
                
                """.replace("\n", "\r\n");
-            "Prefix";
+            "Preamble";
         };
-        assert (is ByteBuffer body = message[1]);
-        assertEquals(utf8.decode(body), "testing 123", "Body");
+        assertEquals {
+            utf8.decode(collectChunks(message[1]));
+            "testing 123";
+            "Body";
+        };
     }
 }

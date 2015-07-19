@@ -57,8 +57,8 @@ shared Map<String,Integer> defaultSchemePorts = createDefaultSchemePorts();
 
 shared alias Headers => Map<String,String|{String*}?>;
 shared alias Parameters => Map<String,String?>;
-shared alias Body => Parameters|FileDescriptor|<ByteBuffer?>()|<String?>()|ByteBuffer|String?;
-shared alias ChunkReceiver => Anything(String)|Anything(ByteBuffer, Charset?)|FileDescriptor?;
+shared alias Body => Parameters|FileDescriptor|ByteBuffer(Charset?)|String(Charset)|ByteBuffer|String;
+shared alias ChunkReceiver => Boolean(String)|Boolean(ByteBuffer, Charset?)|FileDescriptor;
 
 "For sending HTTP messages to servers and receiving replies."
 shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePorts) {
@@ -145,7 +145,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
          [[FileDescriptor]]s will be read in manageable pieces and sent using
          chunked transfer encoding. Similarly, each returned piece from a body
          function will be sent as chunks, until [[null]] is returned."
-        Body body;
+        Body? body;
         "The charset of the [[body]]. This will overwrite any charset parameter of
          the `Content-Type` header in [[headers]]."
         Charset|String? bodyCharset;
@@ -155,7 +155,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
          
          Using this is strongly recommended if you expect the server will
          return a large response to the request."
-        ChunkReceiver chunkReceiver;
+        ChunkReceiver? chunkReceiver;
         "If the response status code is in the [300 series]
          (https://en.wikipedia.org/wiki/List_of_HTTP_status_codes#3xx_Redirection)
          then the redirect(s) will be followed up to the depth specified here.
@@ -221,7 +221,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                     // Write the body after we're fairly sure the socket is ok
                     message[1](socket);
                     
-                    Message response = receive(socket);
+                    Message response = receive(socket, chunkReceiver);
                     
                     // TODO process redirects if flag is true.
                     // TODO Probably won't be able to resend any body, which is ok for 303 (force GET) but maybe throw exception for non-303 redirect with non-resendable body?
@@ -252,11 +252,11 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
         Uri|String uri;
         Parameters parameters;
         Headers headers;
-        Body body;
+        Body? body;
         Charset|String? bodyCharset;
-        ChunkReceiver chunkReceiver;
+        ChunkReceiver? chunkReceiver;
         Integer maxRedirects;
-        return request(getMethod, uri, parameters, headers, body, bodyCharset, maxRedirects);
+        return request(getMethod, uri, parameters, headers, body, bodyCharset, chunkReceiver, maxRedirects);
     }
     
     shared Message post(uri,
@@ -269,11 +269,11 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
         Uri|String uri;
         Parameters parameters;
         Headers headers;
-        Body body;
+        Body? body;
         Charset|String? bodyCharset;
-        ChunkReceiver chunkReceiver;
+        ChunkReceiver? chunkReceiver;
         Integer maxRedirects;
-        return request(postMethod, uri, parameters, headers, body, bodyCharset, maxRedirects);
+        return request(postMethod, uri, parameters, headers, body, bodyCharset, chunkReceiver, maxRedirects);
     }
     
     // TODO ...

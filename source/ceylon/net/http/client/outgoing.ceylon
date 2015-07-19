@@ -39,50 +39,77 @@ shared void externaliseParameters(StringBuilder builder, Parameters parameters) 
     }
 }
 
-void writeChunk(FileDescriptor output, ByteBuffer chunk) {
+void writeChunk(Anything(ByteBuffer) output, ByteBuffer chunk) {
     // Transfer-Encoding: chunked header should already be set
     Integer length = chunk.available;
     // Can't be zero length, as that is specified as the termination chunk
     if (length > 0) {
         String lengthHex = formatInteger(length, 16);
-        output.writeFully(utf8.encode(lengthHex + terminator));
-        output.writeFully(chunk);
-        output.writeFully(utf8.encode(terminator));
+        output(utf8.encode(lengthHex + terminator));
+        output(chunk);
+        output(utf8.encode(terminator));
     }
 }
 
-void writeTerminationChunk(FileDescriptor output) {
-    output.writeFully(utf8.encode("0" + terminator + terminator));
+void writeTerminationChunk(Anything(ByteBuffer) output) {
+    output(utf8.encode("0" + terminator + terminator));
 }
 
-shared void noopBodyWriter(FileDescriptor output) {
+shared void noopBodyWriter(FileDescriptor|Anything(ByteBuffer) output) {
 }
 
-shared void binaryBodyWriter(FileDescriptor|ByteBuffer?()|ByteBuffer body)(FileDescriptor output) {
+shared void binaryBodyWriter(FileDescriptor|ByteBuffer body)(FileDescriptor|Anything(ByteBuffer) output) {
+    Anything(ByteBuffer) outputFunc;
+    if (is FileDescriptor output) {
+        outputFunc = output.writeFully;
+    } else {
+        outputFunc = output;
+    }
+    
     if (is FileDescriptor body) {
         body.readFully(void(ByteBuffer chunk) {
-                writeChunk(output, chunk);
+                writeChunk(outputFunc, chunk);
             });
-        writeTerminationChunk(output);
-    } else if (is ByteBuffer?() body) {
-        while (exists chunk = body()) {
-            writeChunk(output, chunk);
-        }
-        writeTerminationChunk(output);
+        writeTerminationChunk(outputFunc);
     } else {
-        output.writeFully(body);
+        outputFunc(body);
     }
 }
 
-shared void encodingBodyWriter(String?() body, Charset charset)(FileDescriptor output) {
-    while (exists chunkText = body()) {
+shared void callbackBodyWriter(ByteBuffer(Charset?) body, Charset? charset)(FileDescriptor|Anything(ByteBuffer) output) {
+    Anything(ByteBuffer) outputFunc;
+    if (is FileDescriptor output) {
+        outputFunc = output.writeFully;
+    } else {
+        outputFunc = output;
+    }
+    
+    variable ByteBuffer chunk = body(charset);
+    while (chunk.available > 0) {
+        writeChunk(outputFunc, chunk);
+        chunk = body(charset);
+    }
+    writeTerminationChunk(outputFunc);
+}
+
+shared void encodingCallbackBodyWriter(String(Charset) body, Charset charset)(FileDescriptor|Anything(ByteBuffer) output) {
+    Anything(ByteBuffer) outputFunc;
+    if (is FileDescriptor output) {
+        outputFunc = output.writeFully;
+    } else {
+        outputFunc = output;
+    }
+    
+    variable String chunkText = body(charset);
+    while (!chunkText.empty) {
         ByteBuffer chunk = charset.encode(chunkText);
-        writeChunk(output, chunk);
+        writeChunk(outputFunc, chunk);
+        chunkText = body(charset);
     }
-    writeTerminationChunk(output);
+    writeTerminationChunk(outputFunc);
 }
 
-shared [ByteBuffer, Anything(FileDescriptor)] buildMessage(
+shared [ByteBuffer, Anything(FileDescriptor|Anything(ByteBuffer))] buildMessage(
     method,
     host,
     path,
@@ -97,7 +124,7 @@ shared [ByteBuffer, Anything(FileDescriptor)] buildMessage(
     String? query;
     Parameters parameters;
     Headers headers;
-    Body body;
+    Body? body;
     Charset|String? bodyCharset;
     
     // message prefix
@@ -205,7 +232,7 @@ shared [ByteBuffer, Anything(FileDescriptor)] buildMessage(
         } else {
             if (body is Parameters) {
                 contentTypeCharset = parsedBodyCharset else utf8;
-            } else if (body is <String?>()) {
+            } else if (body is String(Charset?)) {
                 contentTypeCharset = parsedBodyCharset else utf8;
             } else if (body is String) {
                 contentTypeCharset = parsedBodyCharset else utf8;
@@ -217,7 +244,7 @@ shared [ByteBuffer, Anything(FileDescriptor)] buildMessage(
         if (body is Parameters) {
             contentTypeName = "application/x-www-form-urlencoded";
             contentTypeCharset = parsedBodyCharset else utf8;
-        } else if (body is <String?>()) {
+        } else if (body is String(Charset?)) {
             contentTypeName = "text/plain";
             contentTypeCharset = parsedBodyCharset else utf8;
         } else if (body is String) {
@@ -242,8 +269,9 @@ shared [ByteBuffer, Anything(FileDescriptor)] buildMessage(
     
     // Prepare body writer
     // Need to do this now, since body length may be needed for the headers
-    Anything(FileDescriptor) bodyWriter;
+    Anything(FileDescriptor|Anything(ByteBuffer)) bodyWriter;
     Integer? bodySize;
+    
     if (is Parameters body) {
         assert (exists contentTypeCharset);
         
@@ -262,16 +290,19 @@ shared [ByteBuffer, Anything(FileDescriptor)] buildMessage(
         
         bodyWriter = binaryBodyWriter(buffer);
         bodySize = buffer.available;
-    } else if (is <String?>() body) {
+    } else if (is String(Charset) body) {
         assert (exists contentTypeCharset);
         
         // Strings will be encoded for each chunk
-        bodyWriter = encodingBodyWriter(body, contentTypeCharset);
+        bodyWriter = encodingCallbackBodyWriter(body, contentTypeCharset);
         bodySize = null;
     } else if (is ByteBuffer body) {
         bodyWriter = binaryBodyWriter(body);
         bodySize = body.available;
-    } else if (is FileDescriptor|ByteBuffer?() body) {
+    } else if (is ByteBuffer(Charset?) body) {
+        bodyWriter = callbackBodyWriter(body, contentTypeCharset);
+        bodySize = null;
+    } else if (is FileDescriptor body) {
         bodyWriter = binaryBodyWriter(body);
         bodySize = null;
     } else {
