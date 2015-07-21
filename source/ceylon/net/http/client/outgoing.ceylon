@@ -228,7 +228,7 @@ shared [ByteBuffer, Anything(FileDescriptor|Anything(ByteBuffer))] buildMessage(
         {String*} params = typeNameAndParams.rest;
         if (exists charsetParam = params.findLast((elem) => elem.trimmed.startsWith("charset=")),
             exists charsetParamValue = charsetParam.split((ch) => ch == '=').getFromFirst(1)) {
-            contentTypeCharset = getCharset(charsetParamValue.trimmed[1 : -1]);
+            contentTypeCharset = getCharset(charsetParamValue.trimmed) else utf8;
         } else {
             if (body is Parameters) {
                 contentTypeCharset = parsedBodyCharset else utf8;

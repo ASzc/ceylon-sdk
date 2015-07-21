@@ -32,6 +32,7 @@ ByteBuffer collectChunks(Anything(Anything(ByteBuffer)) producer) {
     }
     producer(collect);
     
+    gather.flip();
     return gather;
 }
 
