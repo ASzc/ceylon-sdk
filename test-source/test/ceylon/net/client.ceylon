@@ -158,4 +158,36 @@ shared class BuildMessageTest() {
             "Body";
         };
     }
+    
+    test
+    shared void stringGetForceUtf16() {
+        value message = buildMessage {
+            get;
+            "example.com";
+            "/";
+            null;
+            emptyMap;
+            HashMap<String,String> { "content-type"->"text/plain; charset=utf-8" };
+            body = "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ";
+            bodyCharset = "utf-16";
+        };
+        assertEquals {
+            utf8.decode(message[0]);
+            """GET / HTTP/1.1
+               Content-Type: text/plain; charset=UTF-16
+               Host: example.com
+               Accept: */*
+               Accept-Charset: UTF-8
+               User-Agent: Ceylon/1.2
+               Content-Length: 58
+               
+               """.replace("\n", "\r\n");
+            "Preamble";
+        };
+        assertEquals {
+            utf16.decode(collectChunks(message[1]));
+            "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ";
+            "Body";
+        };
+    }
 }
