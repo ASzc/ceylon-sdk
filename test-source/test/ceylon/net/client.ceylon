@@ -190,4 +190,34 @@ shared class BuildMessageTest() {
             "Body";
         };
     }
+    
+    test
+    shared void paramatersPost() {
+        value message = buildMessage {
+            post;
+            "example.com";
+            "/";
+            null;
+            parameters => HashMap<String,String?> { "queryKey"->"queryValue" };
+            body = HashMap<String,String?> { "bodyKey1"->"bodyValue1", "bodyKey2"->"bodyValue2" };
+        };
+        assertEquals {
+            utf8.decode(message[0]);
+            """POST /?queryKey=queryValue HTTP/1.1
+               Host: example.com
+               Accept: */*
+               Accept-Charset: UTF-8
+               User-Agent: Ceylon/1.2
+               Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+               Content-Length: 39
+               
+               """.replace("\n", "\r\n");
+            "Preamble";
+        };
+        assertEquals {
+            utf8.decode(collectChunks(message[1]));
+            "bodyKey1=bodyValue1&bodyKey2=bodyValue2";
+            "Body";
+        };
+    }
 }
