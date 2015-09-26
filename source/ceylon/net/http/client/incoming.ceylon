@@ -19,7 +19,8 @@ import ceylon.io.readers {
     Reader
 }
 import ceylon.net.http {
-    Message
+    Message,
+    capitaliseHeaderName
 }
 
 shared class ParseException(String? description = null, Throwable? cause = null)
@@ -196,7 +197,7 @@ shared Response receive(FileDescriptor sender, ChunkReceiver? chunkReceiver) {
     while (true) {
         value nameOrTerm = readString { headerSep, cr };
         // Header Field Name, ex: Content-Type
-        String name = nameOrTerm[0].trimmed.lowercased;
+        String name = capitaliseHeaderName(nameOrTerm[0].trimmed);
         // If termChar is cr, then we expect name to be blank, ex: \r\n\r\n
         Byte termChar = nameOrTerm[1];
         // End of headers?
@@ -214,18 +215,16 @@ shared Response receive(FileDescriptor sender, ChunkReceiver? chunkReceiver) {
             }
         }
         // Header Field Value, ex: text/html; charset=UTF-8
-        // Comma seperated, as per RFC
+        // TODO is splitting on commas safe for all headers?
         {String*} newValues = readString { cr }[0].split((ch) => ch == ',').map((element) => element.trimmed);
-        // Combine headers with same name based on comma seperated value interpretation:
-        // http://tools.ietf.org/rfcmarkup?doc=7230#section-3.2.2
         if (exists values = headerMap.get(name)) {
+            // Duplicated header names are addressed in RFC 7230
+            // https://tools.ietf.org/rfcmarkup?doc=7230#section-3.2.2
             values.addAll(newValues);
         } else {
             headerMap.put(name, LinkedList<String>(newValues));
         }
     }
-    
-    // TODO call capitaliseHeaderName
     value headers = unmodifiableMap(headerMap);
     
     value body = BodyReader {

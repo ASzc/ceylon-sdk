@@ -320,17 +320,12 @@ shared [ByteBuffer, Anything(FileDescriptor|Anything(ByteBuffer))] buildMessage(
     
     // Write headers
     for (headerName->headerValues in processedHeaders) {
-        if (!headerValues.empty) {
-            builder.append(capitaliseHeaderName(headerName));
+        // It's up to the user to ensure RFC 7230 is respected regarding repeated header names
+        // https://tools.ietf.org/rfcmarkup?doc=7230#section-3.2.2
+        for (val in headerValues) {
+            builder.append(headerName);
             builder.append(": ");
-            variable Boolean addPrefix = false;
-            for (val in headerValues) {
-                if (addPrefix) {
-                    builder.append(",");
-                }
-                addPrefix = true;
-                builder.append(val);
-            }
+            builder.append(val);
             builder.append(terminator);
         }
     }
