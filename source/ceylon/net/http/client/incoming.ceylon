@@ -92,7 +92,11 @@ Integer base16accumulator(Integer partial, Byte element) {
 }
 
 by ("Alex Szczuczko", "Stéphane Épardaud")
-shared Response receive(FileDescriptor sender, ChunkReceiver? chunkReceiver) {
+shared Response receive(sender, preambleCallback, chunkReceiver) {
+    FileDescriptor sender;
+    Anything(ProtoResponse) preambleCallback;
+    ChunkReceiver? chunkReceiver;
+    
     value reader = FileDescriptorReader(sender);
     
     //
@@ -227,17 +231,34 @@ shared Response receive(FileDescriptor sender, ChunkReceiver? chunkReceiver) {
     }
     value headers = unmodifiableMap(headerMap);
     
-    value body = BodyReader {
-        sender;
-        nothing;
-        nothing;
-        nothing;
-        readNumerical;
-        expectBytes;
+    value proto = ProtoResponse {
+        major=major;
+        minor=minor;
+        status=status;
+        reason=reason;
+        headers=headers;
     };
     
-    Response incoming = nothing;
-    return incoming;
+    try {
+        value action = preambleCallback(proto);
+        
+    } finally {
+        // TODO drain / finish reading otherwise socket can't be reused
+        // TODO intelligent behaviour: attempt to Drain for some small number of bytes (<1MB?), if still there, Close
+    }
+    
+    return nothing;
+}
+
+"A HTTP response with a complete preamble, but no body"
+shared class ProtoResponse(major, minor, status, reason, headers) {
+    shared Integer major;
+    shared Integer minor;
+    shared Integer status;
+    shared String reason;
+    shared Map<String,LinkedList<String>> headers;
+    
+    shared Integer? bodySize = nothing; //TODO get from headers
 }
 
 shared class BodyReader(sender, yield, lazy, size, readNumerical, expectBytes) extends Reader() {

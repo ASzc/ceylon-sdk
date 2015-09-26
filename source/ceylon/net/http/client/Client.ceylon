@@ -22,7 +22,6 @@ import ceylon.net.uri {
     Uri,
     parse
 }
-
 import java.io {
     IOException
 }
@@ -60,6 +59,92 @@ shared alias Parameters => Map<String,String?>;
 shared alias Body => Parameters|FileDescriptor|ByteBuffer(Charset?)|String(Charset)|ByteBuffer|String;
 shared alias ChunkReceiver => Boolean(String)|Boolean(ByteBuffer, Charset?)|FileDescriptor;
 
+// TODO need to handle the body if size != 0, can do so by draining or closing the socket...
+
+/*
+"How to handle a body remaining to be read from a source."
+shared abstract class BodySink() of Drain | Close {}
+"Read the body, but discard it immeditately. This takes time, but allows reuse
+ of the source."
+shared class Drain() extends BodySink() {}
+"Close the source, implicitly discarding the body. This avoids the need to read
+ the body, but prevents reuse of the source."
+shared class Close() extends BodySink() {}
+
+"Since most responses involve small or zero-sized bodies, [[Drain]] is the
+ default."
+shared BodySink defaultBodySink = Drain();
+*/
+
+"Retry based on the response HTTP status code."
+shared Anything(ProtoResponse) retryOnStatus(statuses, max_attempts = 5, backoff_factor = 0) {
+    Integer[] statuses;
+    Integer max_attempts;
+    Integer backoff_factor;
+    
+    variable Integer attempts = 0;
+    
+    void f(ProtoResponse response) {
+        attempts++;
+        if (attempts > max_attempts) {
+            // TODO retries exhausted
+        }
+        
+        // TODO retry if status in statuses
+    }
+    return f;
+}
+Anything(ProtoResponse) retryOnServerError() => retryOnStatus(500..599);
+
+shared Anything(ProtoResponse) followRedirects(max_depth = 10) {
+    Integer max_depth;
+    
+    variable Integer depth = 0;
+    
+    void f(ProtoResponse response) {
+        depth++;
+        if (depth > max_depth) {
+            // TODO retries exhausted
+        }
+        
+        // TODO specific handling based on the 3xx error code we get
+    }
+    return f;
+}
+
+
+// TODO probably want specific exceptions to declare when to retry, redirect, etc.?
+/*
+shared abstract class PreambleAction() {
+}
+shared class Continue() extends PreambleAction() {
+}
+shared class Retry(fatePreference = Drain()) extends PreambleAction() {
+    shared BodyFate? fatePreference;
+}
+shared class Redirect(method, location, fatePreference = Drain()) extends PreambleAction() {
+    shared BodyFate? fatePreference;
+    shared Method method;
+    shared String location;
+}
+shared class Authenticate(location, fatePreference = Drain()) extends PreambleAction() {
+    shared BodyFate? fatePreference;
+    shared String location;
+}
+*/
+
+/*
+shared class Retry(connect = 5, read = 5, redirect = 10, backoff_factor = 0) {
+    shared Integer connect;
+    shared Integer read;
+    shared Integer redirect;
+    shared Integer backoff_factor;
+}
+shared Retry defaultRetry = Retry();
+shared Retry noRetry = Retry(0, 0, 0);
+*/
+
+
 "For sending HTTP messages to servers and receiving replies."
 shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePorts) {
     "Used to get the [[Socket]]s required for the requests."
@@ -87,7 +172,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
         body = null,
         bodyCharset = null,
         chunkReceiver = null,
-        maxRedirects = 10) {
+        preambleCallbacks = empty) {
         "HTTP method to use for the request."
         Method method;
         "URI to use. The scheme must be supported by [[poolManager]], and in
@@ -156,12 +241,30 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
          Using this is strongly recommended if you expect the server will
          return a large response to the request."
         ChunkReceiver? chunkReceiver;
+        "Decide from the response preamble if some action needs to be performed.
+         Any exceptions thrown will not be caught, enabling the request to be
+         terminated if desired.
+         
+         This occurs before the response body is read. If an exception is
+         raised, the body will not be buffered or sent to [[chunkReceiver]]."
+        {Anything(ProtoResponse)*} preambleCallbacks;
+        //TODO prb. important for retry counts that the default value creates a new closure instance per request
+        
         "If the response status code is in the [300 series]
          (https://en.wikipedia.org/wiki/List_of_HTTP_status_codes#3xx_Redirection)
          then the redirect(s) will be followed up to the depth specified here.
          To disable redirect following, set this to 0."
         Integer maxRedirects;
-        // TODO argument ideas: lazy (relating to response body reading), authentication, timeouts
+        "TODO ... if Integer, retry safe (see RFC) requests up to that many times after a 503(?) error"
+        Retry retry;
+        // TODO merge redirect into retry? Probably good idea -> similar impact on streaming bodies, similar safety issues.
+        
+        // TODO ^^^ look at urllib3's retry support, add something easier to use here, but same idea.
+        // TODO ^^^ Supply some closures to help with creating the predicate function from params like whitelist, status code, etc.
+        // TODO ^^^ probably can't resend with a stream-type body, otherwise would have to store a copy of it?
+        // TODO ^^^ how does urllib3 handle stream body resends? --> It doesn't!! no smart resend logic
+        
+        // TODO argument ideas: authentication, timeouts
         // TODO Sockets have to be modified to add timeout support: https://technfun.wordpress.com/2009/01/29/networking-in-java-non-blocking-nio-blocking-nio-and-io/
         
         Uri parsedUri;
@@ -220,7 +323,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                     // Write the body after we're fairly sure the socket is ok
                     message[1](socket);
                     
-                    Message response = receive(socket, chunkReceiver);
+                    Message response = receive(socket, preambleCallbacks, chunkReceiver);
                     
                     // TODO process redirects if flag is true.
                     // TODO Probably won't be able to resend any body, which is ok for 303 (force GET) but maybe throw exception for non-303 redirect with non-resendable body?
