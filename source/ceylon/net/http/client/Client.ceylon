@@ -198,11 +198,10 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                 };
                 try {
                     variable Exception? error = null;
-                    // The maximum number of potentially stale connections is
-                    // the connection pool size. Attempt n+1 times, so we
-                    // should get a fresh connection at the end. Throw if it
-                    // still fails.
-                    for (i in 0..pool.maximumConnections) {
+                    // The maximum number of potentially stale connections.
+                    // Attempt n+1 times, so we should get a fresh connection
+                    // at the end. Throw if it still fails.
+                    for (i in 0..pool.idleConnectionsSize+1) {
                         try {
                             // Write the prefix first as it's easy to reset it if writing fails
                             socket.writeFully(message[0]);

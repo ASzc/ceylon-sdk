@@ -141,6 +141,10 @@ shared class Pool(connectorCreator, target, maximumConnections = 5, soft = true)
     LinkedList<Socket> leasedConnections = LinkedList<Socket>();
     LinkedList<Socket> idleConnections = LinkedList<Socket>();
     
+    "Maximum number of connections that [[borrow]] could return that are
+     potentially stale."
+    shared Integer idleConnectionsSize => idleConnections.size;
+    
     "Lease a [[Socket]] from the pool. You must call [[yield]] with the same
      socket when you are finished with it.
      
