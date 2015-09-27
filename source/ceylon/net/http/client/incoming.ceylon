@@ -12,7 +12,8 @@ import ceylon.io.buffer {
     ByteBuffer
 }
 import ceylon.io.charset {
-    utf8
+    utf8,
+    Charset
 }
 import ceylon.io.readers {
     FileDescriptorReader,
@@ -20,8 +21,143 @@ import ceylon.io.readers {
 }
 import ceylon.net.http {
     Message,
-    capitaliseHeaderName
+    capitaliseHeaderName,
+    Method,
+    getMethod=get
 }
+import ceylon.net.uri {
+    Uri,
+    parse,
+    InvalidUriException
+}
+import java.lang {
+    Thread
+}
+
+//
+// Resend
+//
+
+shared class ResendMods(
+    method = null,
+    uri = null,
+    parameters = null,
+    headers = null,
+    body = null,
+    bodyCharset = null) {
+    shared Method? method;
+    shared Uri? uri;
+    shared Parameters? parameters;
+    shared Headers? headers;
+    shared Body? body;
+    shared Charset? bodyCharset;
+}
+
+shared abstract class ReceiveResult() of Complete | Resend {}
+shared class Complete(response, body) extends ReceiveResult() {
+    shared ProtoResponse response;
+    shared Body? body;
+}
+shared class Resend(response, modifications) extends ReceiveResult() {
+    shared ProtoResponse response;
+    shared ResendMods? modifications;
+}
+
+shared class RetryException() extends Exception() {}
+shared class AttemptsExhaustedException() extends RetryException() {}
+shared class RedirectDepthException() extends RetryException() {}
+
+shared alias ProtoCallback => ResendMods?(ProtoResponse);
+
+"Resend based on the response HTTP status code."
+shared ProtoCallback retryOnStatus(statuses, max_attempts = 5, backoff_factor = 0) {
+    Integer[] statuses;
+    Integer max_attempts;
+    Integer backoff_factor;
+    
+    variable Integer attempts = 0;
+    
+    ResendMods? f(ProtoResponse response) {
+        attempts++;
+        if (attempts > max_attempts) {
+            throw AttemptsExhaustedException();
+        } else if (response.status in statuses) {
+            if (backoff_factor > 0) {
+                Thread.sleep(backoff_factor * (2 ^ (attempts - 1)));
+            }
+            return ResendMods();
+        } else {
+            return null;
+        }
+    }
+    return f;
+}
+ProtoCallback retryOnServerError() => retryOnStatus(500..599);
+ProtoCallback retryOnError() => retryOnStatus(400..599);
+
+Uri? parseLocation(ProtoResponse response) {
+    if (exists locs = response.headers.get("Location"), exists loc = locs.first) {
+        try {
+            return parse(loc);
+        } catch (InvalidUriException e) {
+        }
+    }
+    return null;
+}
+
+"Follow server specified redirects as defined in [RFC 7231 §6.4]
+ (https://tools.ietf.org/html/rfc7231#section-6.4) and [RFC 7538]
+ (https://tools.ietf.org/html/rfc7538#section-3)."
+shared ProtoCallback followRedirects(max_depth = 10) {
+    Integer max_depth;
+    
+    variable Integer depth = 0;
+    
+    ResendMods? f(ProtoResponse response) {
+        depth++;
+        if (depth > max_depth) {
+            throw RedirectDepthException();
+        } else if (exists loc = parseLocation(response)) {
+            if (response.status == 301) {
+                return ResendMods { uri = loc; };
+            } else if (response.status == 302) {
+                return ResendMods { uri = loc; };
+            } else if (response.status == 303) {
+                return ResendMods {
+                    method = getMethod;
+                    uri = loc;
+                    body = null;
+                };
+            } else if (response.status == 307) {
+                return ResendMods { uri = loc; };
+            } else if (response.status == 308) {
+                return ResendMods { uri = loc; };
+            }
+        }
+        return null;
+    }
+    return f;
+}
+
+// TODO need basic auth functions: a simple one for setting the Authorization header blind (no resend required),
+// TODO and a preambleCallback that can handle WWW-Authenticate realms (user/pass per realm), but requires a resend
+
+shared String basicAuthHeader(String user, String pass) {
+    // TODO
+    return nothing;
+}
+
+shared ResendMods? realmAwareBasicAuth(credentials)(response) {
+    Map<String,[String, String]> credentials;
+    ProtoResponse response;
+    // TODO 
+    return nothing;
+}
+
+
+//
+// Parse
+//
 
 shared class ParseException(String? description = null, Throwable? cause = null)
         extends Exception(description, cause) {
@@ -84,17 +220,21 @@ Byte headerSep = ':'.integer.byte;
 // ((0 * 10 + 3) * 10 + 2) * 10 + 1 = 321
 Integer base10accumulator(Integer partial, Byte element) {
     // #30 == '0'
-    return 10 * partial + (element.signed - #30);
+    return 10*partial + (element.signed - #30);
 }
 
 Integer base16accumulator(Integer partial, Byte element) {
     return nothing; // TODO
 }
 
+//
+// Receive
+//
+
 by ("Alex Szczuczko", "Stéphane Épardaud")
-shared Response receive(sender, preambleCallback, chunkReceiver) {
+shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
     FileDescriptor sender;
-    Anything(ProtoResponse) preambleCallback;
+    {ProtoCallback*} protoCallbacks;
     ChunkReceiver? chunkReceiver;
     
     value reader = FileDescriptorReader(sender);
@@ -232,35 +372,37 @@ shared Response receive(sender, preambleCallback, chunkReceiver) {
     value headers = unmodifiableMap(headerMap);
     
     value proto = ProtoResponse {
-        major=major;
-        minor=minor;
-        status=status;
-        reason=reason;
-        headers=headers;
+        major = major;
+        minor = minor;
+        status = status;
+        reason = reason;
+        headers = headers;
     };
     
-    try {
-        value action = preambleCallback(proto);
-        
-    } finally {
+    
+    void drain() {
         // TODO drain / finish reading otherwise socket can't be reused
         // TODO intelligent behaviour: attempt to Drain for some small number of bytes (<1MB?), if still there, Close
     }
     
-    return nothing;
-}
-
-"A HTTP response with a complete preamble, but no body"
-shared class ProtoResponse(major, minor, status, reason, headers) {
-    shared Integer major;
-    shared Integer minor;
-    shared Integer status;
-    shared String reason;
-    shared Map<String,LinkedList<String>> headers;
+    try {
+        for (callback in protoCallbacks) {
+            if (exists rm = callback(proto)) {
+                drain();
+                return Resend(proto, rm);
+            }
+        }
+    } catch (Exception e) {
+        drain();
+        throw;
+    }
     
-    shared Integer? bodySize = nothing; //TODO get from headers
+    // TODO read body
+    
+    return Complete(proto, nothing);
 }
 
+// TODO incorporate BodyReader into recieve, doesn't need to be seperate anymore
 shared class BodyReader(sender, yield, lazy, size, readNumerical, expectBytes) extends Reader() {
     FileDescriptor sender;
     "Function to call when done reading the body"
@@ -368,6 +510,23 @@ shared class BodyReader(sender, yield, lazy, size, readNumerical, expectBytes) e
     }
 }
 
+
+//
+// Response
+//
+
+"A HTTP response with a complete preamble, but no body"
+shared class ProtoResponse(major, minor, status, reason, headers) {
+    shared Integer major;
+    shared Integer minor;
+    shared Integer status;
+    shared String reason;
+    shared Map<String,LinkedList<String>> headers;
+    
+    shared Integer? bodySize = nothing; //TODO get from headers
+}
+
+// TODO probably don't need a Message superclass?
 shared class Response() extends Message(nothing) {
     shared Integer code = nothing;
     // TODO include redirect [Response*] history here
