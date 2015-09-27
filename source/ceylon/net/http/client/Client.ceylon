@@ -56,7 +56,9 @@ shared Map<String,Integer> defaultSchemePorts = createDefaultSchemePorts();
 
 shared alias Headers => Map<String,String|{String*}?>;
 shared alias Parameters => Map<String,String?>;
-shared alias Body => Parameters|FileDescriptor|ByteBuffer(Charset?)|String(Charset)|ByteBuffer|String;
+shared alias StreamBody => FileDescriptor|ByteBuffer(Charset?)|String(Charset);
+shared alias FixedBody => Parameters|ByteBuffer|String;
+shared alias Body => StreamBody|FixedBody;
 shared alias ChunkReceiver => Boolean(String)|Boolean(ByteBuffer, Charset?)|FileDescriptor;
 
 // TODO need to handle the body if size != 0, can do so by draining or closing the socket...
@@ -227,9 +229,8 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
          Non-binary values will be encoded with the charset parameter of the
          `Content-Type` header, or the value of [[bodyCharset]], if it exists.
          
-         [[FileDescriptor]]s will be read in manageable pieces and sent using
-         chunked transfer encoding. Similarly, each returned piece from a body
-         function will be sent as chunks, until [[null]] is returned."
+         [[StreamBody]]s will be read in manageable pieces and sent using
+         chunked transfer encoding."
         Body? body;
         "The charset of the [[body]]. This will overwrite any charset parameter of
          the `Content-Type` header in [[headers]]."
