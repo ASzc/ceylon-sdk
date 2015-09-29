@@ -56,7 +56,7 @@ shared class ResendMods(
 shared abstract class ReceiveResult() of Complete | Resend {}
 shared class Complete(response, body) extends ReceiveResult() {
     shared ProtoResponse response;
-    shared Body? body;
+    shared ByteBuffer? body;
 }
 shared class Resend(response, mods) extends ReceiveResult() {
     shared ProtoResponse response;
@@ -527,7 +527,7 @@ shared class ProtoResponse(major, minor, status, reason, headers) {
 }
 
 "A complete HTTP response"
-shared class Response(major, minor, status, reason, headers, body, resends = empty) {
+shared class Response(major, minor, status, reason, headers, body, resends) {
     Integer major;
     Integer minor;
     shared Integer status;

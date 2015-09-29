@@ -82,7 +82,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                                              definition.")
     throws (`class MissingHostException`, "When the parsed [[uri]] lacks a host
                                            definition.")
-    shared Message request(method,
+    shared Response request(method,
         uri,
         parameters = emptyMap,
         headers = emptyMap,
@@ -183,91 +183,106 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
             parsedUri = parse(uri);
         }
         
-        if (exists String host = parsedUri.authority.host) {
-            if (exists String scheme = parsedUri.scheme) {
-                Integer port;
-                if (exists p = parsedUri.authority.port) {
-                    port = p;
-                } else if (exists p = schemePorts[scheme]) {
-                    port = p;
-                } else {
-                    throw UnknownSchemePortException(scheme);
-                }
-                
-                Pool pool = poolManager.poolFor(scheme, host, port);
-                Socket socket = pool.borrow();
-                [ByteBuffer, Anything(FileDescriptor)] message = buildMessage {
-                    method;
-                    host;
-                    parsedUri.pathPart;
-                    parsedUri.queryPart;
-                    parameters;
-                    headers;
-                    body;
-                    bodyCharset;
-                };
-                
+        String host;
+        if (exists h = parsedUri.authority.host) {
+            host = h;
+        } else {
+            throw MissingHostException(parsedUri);
+        }
+        
+        String scheme;
+        if (exists s = parsedUri.scheme) {
+            scheme = s;
+        } else {
+            throw MissingSchemeException(parsedUri);
+        }
+        
+        Integer port;
+        if (exists p = parsedUri.authority.port) {
+            port = p;
+        } else if (exists p = schemePorts[scheme]) {
+            port = p;
+        } else {
+            throw UnknownSchemePortException(scheme);
+        }
+        
+        Pool pool = poolManager.poolFor(scheme, host, port);
+        Socket socket = pool.borrow();
+        
+        try {
+            variable [ByteBuffer, Anything(FileDescriptor)] message = buildMessage {
+                method;
+                host;
+                parsedUri.pathPart;
+                parsedUri.queryPart;
+                parameters;
+                headers;
+                body;
+                bodyCharset;
+            };
+            
+            value resends = LinkedList<[ProtoResponse, ResendMods]>();
+            
+            while (true) {
                 ReceiveResult result;
-                try {
-                    variable Exception? error = null;
-                    // The maximum number of potentially stale connections.
-                    // Attempt n+1 times, so we should get a fresh connection
-                    // at the end. Throw if it still fails.
-                    for (i in 0..pool.idleConnectionsSize) {
-                        try {
-                            // Write the prefix first as it's easy to reset it if writing fails
-                            socket.writeFully(message[0]);
-                            break;
-                        } catch (IOException e) {
-                            message[0].position = 0;
-                            pool.exchange(socket);
-                            if (exists x = error) {
-                                e.addSuppressed(x);
-                            }
-                            error = e;
+                
+                variable Exception? error = null;
+                // The maximum number of potentially stale connections.
+                // Attempt n+1 times, so we should get a fresh connection
+                // at the end. Throw if it still fails.
+                for (i in 0..pool.idleConnectionsSize) {
+                    try {
+                        // Write the prefix first as it's easy to reset it if writing fails
+                        socket.writeFully(message[0]);
+                        break;
+                    } catch (IOException e) {
+                        message[0].position = 0;
+                        pool.exchange(socket);
+                        if (exists x = error) {
+                            e.addSuppressed(x);
                         }
-                    } else {
-                        throw error else Exception("Unable to send message.");
+                        error = e;
                     }
-                    // Write the body after we're fairly sure the socket is ok
-                    message[1](socket);
-                    
-                    result = receive(socket, protoCallbacks, chunkReceiver);
-                } finally {
-                    pool.yield(socket);
+                } else {
+                    throw error else Exception("Unable to send message.");
                 }
+                // Write the body after we're fairly sure the socket is ok
+                message[1](socket);
+                
+                result = receive(socket, protoCallbacks, chunkReceiver);
                 
                 switch (result)
                 case (is Complete) {
-                    // TODO create full Response out of proto, body and resend list
-                    
-                    return nothing;
+                    return Response {
+                        major = result.response.major;
+                        minor = result.response.minor;
+                        status = result.response.status;
+                        reason = result.response.reason;
+                        headers = result.response.headers;
+                        body = result.body;
+                        resends = resends;
+                    };
                 }
                 case (is Resend) {
-                    // TODO resend can probably be handled as a recursive call to request()?
-                    
-                    // TODO how to track this between calls?
-                    // TODO alternatively can make this iterative, restructure function for repeated message build/send
-                    value resends = LinkedList<[ProtoResponse, ResendMods]>();
+                    // TODO is a tuple the right form?
                     resends.add([result.response, result.mods]);
                     
-                    return request {
+                    // TODO may be able to reset the positions of some of the StreamBody types?
+                    // TODO double check calling buildMessage again won't do anything wierd
+                    message = buildMessage {
                         method = result.mods.method else method;
-                        uri = result.mods.uri else parsedUri;
+                        host; // TODO result.mods.uri
+                        parsedUri.pathPart; // TODO result.mods.uri
+                        parsedUri.queryPart; // TODO result.mods.uri
                         parameters; // TODO merge mods into copy if required
                         headers; // TODO merge mods into copy if required
                         body = result.mods.body else body;
                         bodyCharset = result.mods.bodyCharset else bodyCharset;
-                        chunkReceiver;
-                        protoCallbacks;
                     };
                 }
-                
-            } else {
-                throw MissingSchemeException(parsedUri);
             }
-        } else {
-            throw MissingHostException(parsedUri);
+        } finally {
+            pool.yield(socket);
         }
     }
     
