@@ -58,9 +58,9 @@ shared class Complete(response, body) extends ReceiveResult() {
     shared ProtoResponse response;
     shared Body? body;
 }
-shared class Resend(response, modifications) extends ReceiveResult() {
+shared class Resend(response, mods) extends ReceiveResult() {
     shared ProtoResponse response;
-    shared ResendMods? modifications;
+    shared ResendMods mods;
 }
 
 shared class RetryException() extends Exception() {}
@@ -526,8 +526,17 @@ shared class ProtoResponse(major, minor, status, reason, headers) {
     shared Integer? bodySize = nothing; //TODO get from headers
 }
 
-// TODO probably don't need a Message superclass?
-shared class Response() extends Message(nothing) {
-    shared Integer code = nothing;
-    // TODO include redirect [Response*] history here
+"A complete HTTP response"
+shared class Response(major, minor, status, reason, headers, body, resends = empty) {
+    Integer major;
+    Integer minor;
+    shared Integer status;
+    shared String reason;
+    shared Map<String,LinkedList<String>> headers;
+    "[[null]] implies that the body has been sent to a chunkReceiver instead of being buffered."
+    shared ByteBuffer? body;
+    shared List<[ProtoResponse, ResendMods]> resends;
+    
+    // TODO is a tuple best?
+    shared [Integer, Integer] http_version = [major, minor];
 }

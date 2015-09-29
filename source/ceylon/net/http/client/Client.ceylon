@@ -1,6 +1,7 @@
 import ceylon.collection {
     unmodifiableMap,
-    HashMap
+    HashMap,
+    LinkedList
 }
 import ceylon.io {
     FileDescriptor,
@@ -205,6 +206,8 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                     body;
                     bodyCharset;
                 };
+                
+                ReceiveResult result;
                 try {
                     variable Exception? error = null;
                     // The maximum number of potentially stale connections.
@@ -229,22 +232,37 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                     // Write the body after we're fairly sure the socket is ok
                     message[1](socket);
                     
-                    switch (result = receive(socket, protoCallbacks, chunkReceiver))
-                    case (is Complete) {
-                        // TODO create full Response out of proto, body and resend list
-                        
-                        return nothing;
-                    }
-                    case (is Resend) {
-                        // TODO resend can probably be handled as a recursive call to request()?
-                        // TODO ^^ if so, probably should yield the socket before the recursive call?
-                        // TODO ^^ store list of [proto,mods] tuples(?) into final result as resends(?) attr
-                        
-                        return nothing;
-                    }
+                    result = receive(socket, protoCallbacks, chunkReceiver);
                 } finally {
                     pool.yield(socket);
                 }
+                
+                switch (result)
+                case (is Complete) {
+                    // TODO create full Response out of proto, body and resend list
+                    
+                    return nothing;
+                }
+                case (is Resend) {
+                    // TODO resend can probably be handled as a recursive call to request()?
+                    
+                    // TODO how to track this between calls?
+                    // TODO alternatively can make this iterative, restructure function for repeated message build/send
+                    value resends = LinkedList<[ProtoResponse, ResendMods]>();
+                    resends.add([result.response, result.mods]);
+                    
+                    return request {
+                        method = result.mods.method else method;
+                        uri = result.mods.uri else parsedUri;
+                        parameters; // TODO merge mods into copy if required
+                        headers; // TODO merge mods into copy if required
+                        body = result.mods.body else body;
+                        bodyCharset = result.mods.bodyCharset else bodyCharset;
+                        chunkReceiver;
+                        protoCallbacks;
+                    };
+                }
+                
             } else {
                 throw MissingSchemeException(parsedUri);
             }
