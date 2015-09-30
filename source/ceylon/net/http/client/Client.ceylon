@@ -302,14 +302,14 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                     // TODO may be able to reset the positions of some of the StreamBody types?
                     // TODO double check calling buildMessage again won't do anything wierd
                     message = buildMessage {
-                        method = result.mods.method else method;
-                        newHost;
-                        newPathPart;
-                        newQueryPart;
-                        newParameters;
-                        newHeaders;
-                        body = result.mods.body else body;
-                        bodyCharset = result.mods.bodyCharset else bodyCharset;
+                        method = newMethod;
+                        host = newHost;
+                        path = newPathPart;
+                        query = newQueryPart;
+                        parameters = newParameters;
+                        headers = newHeaders;
+                        body = newBody;
+                        bodyCharset = newBodyCharset;
                     };
                 }
             }
