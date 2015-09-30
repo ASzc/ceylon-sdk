@@ -223,6 +223,15 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
             
             value resends = LinkedList<Resend>();
             
+            variable Method newMethod = method;
+            variable String newHost = host;
+            variable String newPathPart = parsedUri.pathPart;
+            variable String? newQueryPart = parsedUri.queryPart;
+            variable Parameters newParameters = parameters;
+            variable Headers newHeaders = headers;
+            variable Body? newBody = body;
+            variable Charset|String? newBodyCharset = bodyCharset;
+            
             while (true) {
                 ReceiveResult result;
                 
@@ -266,31 +275,28 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                 case (is Resend) {
                     resends.add(result);
                     
-                    String newHost;
-                    String newPathPart;
-                    String? newQueryPart;
+                    // Modifications are applied cumulatively
+                    if (exists m = result.mods.method) {
+                        newMethod = m;
+                    }
                     if (exists u = result.mods.uri) {
-                        newHost = u.authority.host else host;
+                        if (exists h = u.authority.host) {
+                            newHost = h;
+                        }
                         newPathPart = u.pathPart;
                         newQueryPart = u.queryPart;
-                    } else {
-                        newHost = host;
-                        newPathPart = parsedUri.pathPart;
-                        newQueryPart = parsedUri.queryPart;
                     }
-                    
-                    Parameters newParameters;
                     if (exists p = result.mods.parameters) {
-                        newParameters = parameters.patch(p);
-                    } else {
-                        newParameters = parameters;
+                        newParameters = newParameters.patch(p);
                     }
-                    
-                    Headers newHeaders;
                     if (exists h = result.mods.parameters) {
-                        newHeaders = headers.patch(h);
-                    } else {
-                        newHeaders = headers;
+                        newHeaders = newHeaders.patch(h);
+                    }
+                    if (exists b = result.mods.body) {
+                        newBody = b;
+                    }
+                    if (exists c = result.mods.bodyCharset) {
+                        newBodyCharset = c;
                     }
                     
                     // TODO may be able to reset the positions of some of the StreamBody types?
