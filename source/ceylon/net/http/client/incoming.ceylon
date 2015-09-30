@@ -535,8 +535,7 @@ shared class Response(major, minor, status, reason, headers, body, resends) {
     shared Map<String,LinkedList<String>> headers;
     "[[null]] implies that the body has been sent to a chunkReceiver instead of being buffered."
     shared ByteBuffer? body;
-    shared List<[ProtoResponse, ResendMods]> resends;
+    shared List<Resend> resends;
     
-    // TODO is a tuple best?
     shared [Integer, Integer] http_version = [major, minor];
 }

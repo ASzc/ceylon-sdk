@@ -25,17 +25,15 @@ shared String terminator = "\r\n";
 
 shared void externaliseParameters(StringBuilder builder, Parameters parameters) {
     variable Boolean addPrefix = false;
-    for (name->rawVal in parameters) {
+    for (name->val in parameters) {
         if (addPrefix) {
             builder.append("&");
         }
         addPrefix = true;
         
         builder.append(percentEncoder.encodePathSegmentParamName(name));
-        if (exists String val = rawVal) {
-            builder.append("=")
-                .append(percentEncoder.encodePathSegmentParamValue(val));
-        }
+        builder.append("=")
+            .append(percentEncoder.encodePathSegmentParamValue(val));
     }
 }
 
@@ -178,7 +176,6 @@ shared [ByteBuffer, Anything(FileDescriptor|Anything(ByteBuffer))] buildMessage(
             case (is String) {
                 values.addAll { val };
             }
-            case (null) {}
         } else {
             switch (val)
             case (is {String*}) {
@@ -186,9 +183,6 @@ shared [ByteBuffer, Anything(FileDescriptor|Anything(ByteBuffer))] buildMessage(
             }
             case (is String) {
                 processedHeaders.put(name, LinkedList<String> { val });
-            }
-            case (null) {
-                processedHeaders.put(name, LinkedList<String> { });
             }
         }
     }

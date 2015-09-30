@@ -55,8 +55,8 @@ Map<String,Integer> createDefaultSchemePorts() {
 }
 shared Map<String,Integer> defaultSchemePorts = createDefaultSchemePorts();
 
-shared alias Headers => Map<String,String|{String*}?>;
-shared alias Parameters => Map<String,String?>;
+shared alias Headers => Map<String,String|{String*}>;
+shared alias Parameters => Map<String,String>;
 shared alias StreamBody => FileDescriptor|ByteBuffer(Charset?)|String(Charset);
 shared alias FixedBody => Parameters|ByteBuffer|String;
 shared alias Body => StreamBody|FixedBody;
@@ -221,7 +221,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                 bodyCharset;
             };
             
-            value resends = LinkedList<[ProtoResponse, ResendMods]>();
+            value resends = LinkedList<Resend>();
             
             while (true) {
                 ReceiveResult result;
@@ -230,7 +230,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                 // The maximum number of potentially stale connections.
                 // Attempt n+1 times, so we should get a fresh connection
                 // at the end. Throw if it still fails.
-                for (i in 0..pool.idleConnectionsSize) {
+                for (i in 0..pool.idleConnectionsSize) { // TODO needs to be idleConnectionsSize at borrow time?
                     try {
                         // Write the prefix first as it's easy to reset it if writing fails
                         socket.writeFully(message[0]);
@@ -264,18 +264,44 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                     };
                 }
                 case (is Resend) {
-                    // TODO is a tuple the right form?
-                    resends.add([result.response, result.mods]);
+                    resends.add(result);
+                    
+                    String newHost;
+                    String newPathPart;
+                    String? newQueryPart;
+                    if (exists u = result.mods.uri) {
+                        newHost = u.authority.host else host;
+                        newPathPart = u.pathPart;
+                        newQueryPart = u.queryPart;
+                    } else {
+                        newHost = host;
+                        newPathPart = parsedUri.pathPart;
+                        newQueryPart = parsedUri.queryPart;
+                    }
+                    
+                    Parameters newParameters;
+                    if (exists p = result.mods.parameters) {
+                        newParameters = parameters.patch(p);
+                    } else {
+                        newParameters = parameters;
+                    }
+                    
+                    Headers newHeaders;
+                    if (exists h = result.mods.parameters) {
+                        newHeaders = headers.patch(h);
+                    } else {
+                        newHeaders = headers;
+                    }
                     
                     // TODO may be able to reset the positions of some of the StreamBody types?
                     // TODO double check calling buildMessage again won't do anything wierd
                     message = buildMessage {
                         method = result.mods.method else method;
-                        host; // TODO result.mods.uri
-                        parsedUri.pathPart; // TODO result.mods.uri
-                        parsedUri.queryPart; // TODO result.mods.uri
-                        parameters; // TODO merge mods into copy if required
-                        headers; // TODO merge mods into copy if required
+                        newHost;
+                        newPathPart;
+                        newQueryPart;
+                        newParameters;
+                        newHeaders;
                         body = result.mods.body else body;
                         bodyCharset = result.mods.bodyCharset else bodyCharset;
                     };
