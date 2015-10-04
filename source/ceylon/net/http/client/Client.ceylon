@@ -171,8 +171,12 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
          (https://tools.ietf.org/html/rfc7231#section-4.2.2) methods."
         {ProtoCallback*} protoCallbacks;
         
-        // TODO argument ideas: timeouts (connect and read if possible?)
-        // TODO Sockets have to be modified to add timeout support: https://technfun.wordpress.com/2009/01/29/networking-in-java-non-blocking-nio-blocking-nio-and-io/
+        
+        // TODO These arguments are probably going to require modifiying ceylon.io:
+        // TODO  - (timeout) Socket connect and read timeout
+        // https://stackoverflow.com/questions/16369146/timeout-on-connect-to-socket-using-nio-socketchannel
+        // https://technfun.wordpress.com/2009/01/29/networking-in-java-non-blocking-nio-blocking-nio-and-io/
+        // TODO  - (verify) Custom certificate chain, or disable verification (need a few TrustManager implementations?)
         
         Uri parsedUri;
         switch (uri)
