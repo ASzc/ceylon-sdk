@@ -379,7 +379,6 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
         headers = headers;
     };
     
-    
     void drain() {
         // TODO drain / finish reading otherwise socket can't be reused
         // TODO intelligent behaviour: attempt to Drain for some small number of bytes (<1MB?), if still there, Close
@@ -397,9 +396,58 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
         throw;
     }
     
-    // TODO read body
+    ByteBuffer? body;
+    if (exists bodySize = proto.bodySize) {
+        variable Integer bytesRead = 0;
+        // Known size body (no Chunked Transfer Encoding)
+        if (exists chunkReceiver) {
+            // Simulate chunk(s) of at most 4 MiB
+            ByteBuffer buf = newByteBuffer(min { bodySize, 4 * (2 ^ 20) });
+            sender.read(buf);
+            while (buf.available == 0) {
+                bytesRead += buf.capacity;
+                buf.flip();
+                if (is Boolean(String) chunkReceiver) {
+                    Charset charset = proto.bodyCharset else utf8;
+                    String chunkString = nothing; // TODO decode buf
+                    chunkReceiver(chunkString);
+                } else if (is Boolean(ByteBuffer, Charset?) chunkReceiver) {
+                    chunkReceiver(buf, proto.bodyCharset);
+                } else {
+                    chunkReceiver.writeFully(buf);
+                }
+                sender.read(buf);
+            }
+            bytesRead += buf.capacity - buf.available;
+            body = null;
+        } else {
+            // Read entire body into a single buffer
+            ByteBuffer buf = newByteBuffer(bodySize);
+            bytesRead = sender.read(buf);
+            buf.flip();
+            body = buf;
+        }
+        if (bodySize != bytesRead) {
+            // TODO throw exception, body size didn't match (smaller?)
+        }
+    } else {
+        // Unknown size body (Chunked Transfer Encoding)
+        if (exists chunkReceiver) {
+            // Read chunks as they come and pass them on
+            // TODO
+            
+            body = null;
+        } else {
+            // Read chunks as they come, combine into a single buffer
+            ByteBuffer buf = newByteBuffer(0);
+            // TODO
+            
+            buf.flip();
+            body = buf;
+        }
+    }
     
-    return Complete(proto, nothing);
+    return Complete(proto, body);
 }
 
 // TODO incorporate BodyReader into recieve, doesn't need to be seperate anymore
@@ -524,6 +572,7 @@ shared class ProtoResponse(major, minor, status, reason, headers) {
     shared Map<String,LinkedList<String>> headers;
     
     shared Integer? bodySize = nothing; //TODO get from headers
+    shared Charset? bodyCharset = nothing; //TODO get from headers
 }
 
 "A complete HTTP response"
