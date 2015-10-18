@@ -219,12 +219,22 @@ Byte headerSep = ':'.integer.byte;
 
 // ((0 * 10 + 3) * 10 + 2) * 10 + 1 = 321
 Integer base10accumulator(Integer partial, Byte element) {
-    // #30 == '0'
-    return 10*partial + (element.signed - #30);
+    return 10*partial + (element.signed - '0'.integer);
 }
 
 Integer base16accumulator(Integer partial, Byte element) {
-    return nothing; // TODO
+    // Num/upperalpha/loweralpha are not contiguous in ascii
+    Integer digit;
+    if ('0'.integer <= element.signed <= '9'.integer) {
+        digit = element.signed - '0'.integer;
+    } else if ('A'.integer <= element.signed <= 'F'.integer) {
+        digit = 10 + element.signed - 'A'.integer;
+    } else if ('a'.integer <= element.signed <= 'f'.integer) {
+        digit = 10 + element.signed - 'a'.integer;
+    } else {
+        throw ParseException("Non-hexadecimal digit ``element`` encountered");
+    }
+    return 16*partial + digit; // TODO
 }
 
 //
