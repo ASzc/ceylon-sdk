@@ -351,11 +351,11 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
                 expectBytes { lf };
                 break;
             } else {
-                // TODO throw exception, unexpected value between terminators
+                throw ParseException("Unexpected value between terminator characters");
             }
         } else {
             if (name.empty) {
-                // TODO throw exception, blank header name
+                throw ParseException("Blank header name");
             }
         }
         // Header Field Value, ex: text/html; charset=UTF-8
@@ -379,9 +379,17 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
         headers = headers;
     };
     
-    void drain() {
-        // TODO drain / finish reading otherwise socket can't be reused
-        // TODO intelligent behaviour: attempt to Drain for some small number of bytes (<1MB?), if still there, Close
+    void drain(Integer limit = 2 ^ 20) {
+        // Finish reading otherwise socket can't be reused
+        if (exists bodySize = proto.bodySize) {
+            ByteBuffer buf = newByteBuffer(min { bodySize, limit });
+            if (sender.read(buf) == limit) {
+                sender.close();
+            }
+            // otherwise we've read the entire body, socket is safe to reuse
+        } else {
+            // TODO read chunks, close if total reaches limit
+        }
     }
     
     try {
@@ -397,6 +405,7 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
     }
     
     ByteBuffer? body;
+    // TODO Socket read timeout is required to recover from bodySize being greater than the actual body size.
     if (exists bodySize = proto.bodySize) {
         variable Integer bytesRead = 0;
         // Known size body (no Chunked Transfer Encoding)
@@ -409,7 +418,7 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
                 buf.flip();
                 if (is Boolean(String) chunkReceiver) {
                     Charset charset = proto.bodyCharset else utf8;
-                    String chunkString = nothing; // TODO decode buf
+                    String chunkString = charset.decode(buf);
                     chunkReceiver(chunkString);
                 } else if (is Boolean(ByteBuffer, Charset?) chunkReceiver) {
                     chunkReceiver(buf, proto.bodyCharset);
@@ -418,7 +427,7 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
                 }
                 sender.read(buf);
             }
-            bytesRead += buf.capacity - buf.available;
+            bytesRead += buf.capacity-buf.available;
             body = null;
         } else {
             // Read entire body into a single buffer
@@ -428,52 +437,13 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
             body = buf;
         }
         if (bodySize != bytesRead) {
-            // TODO throw exception, body size didn't match (smaller?)
+            throw ParseException("Premature EOF while reading body");
         }
     } else {
         // Unknown size body (Chunked Transfer Encoding)
         if (exists chunkReceiver) {
             // Read chunks as they come and pass them on
-            // TODO
-            
-            body = null;
-        } else {
-            // Read chunks as they come, combine into a single buffer
             ByteBuffer buf = newByteBuffer(0);
-            // TODO
-            
-            buf.flip();
-            body = buf;
-        }
-    }
-    
-    return Complete(proto, body);
-}
-
-// TODO incorporate BodyReader into recieve, doesn't need to be seperate anymore
-shared class BodyReader(sender, yield, lazy, size, readNumerical, expectBytes) extends Reader() {
-    FileDescriptor sender;
-    "Function to call when done reading the body"
-    Anything(FileDescriptor) yield;
-    "If true, wait to read the body until [[read]] is called."
-    shared Boolean lazy;
-    "Null implies chunked transfer"
-    shared Integer? size;
-    Integer(Byte, Set<Byte>, Integer(Integer, Byte)) readNumerical;
-    Anything({Byte*}) expectBytes;
-    
-    ByteBuffer eagerRead() {
-        ByteBuffer body;
-        if (exists size) {
-            // TODO Socket timeout is required to recover from size being greater than the actual body size.
-            ByteBuffer b = newByteBuffer(size);
-            Integer bytesRead = sender.read(b);
-            if (size != bytesRead) {
-                // TODO throw exception, body size didn't match (smaller?)
-            }
-            body = b;
-        } else {
-            ByteBuffer b = newByteBuffer(0);
             while (true) {
                 Integer chunkLength = readNumerical(cr, hexDigit, base16accumulator);
                 expectBytes({ lf });
@@ -481,83 +451,46 @@ shared class BodyReader(sender, yield, lazy, size, readNumerical, expectBytes) e
                     expectBytes({ cr, lf });
                     break;
                 }
-                b.resize(b.capacity + chunkLength, true);
-                Integer bytesRead = sender.read(b);
+                buf.resize(chunkLength, true);
+                Integer bytesRead = sender.read(buf);
                 if (chunkLength != bytesRead) {
-                    // TODO throw exception, chunk size didn't match (smaller?)
+                    throw ParseException("Premature EOF while reading body chunk");
+                }
+                buf.flip();
+                if (is Boolean(String) chunkReceiver) {
+                    Charset charset = proto.bodyCharset else utf8;
+                    String chunkString = charset.decode(buf);
+                    chunkReceiver(chunkString);
+                } else if (is Boolean(ByteBuffer, Charset?) chunkReceiver) {
+                    chunkReceiver(buf, proto.bodyCharset);
+                } else {
+                    chunkReceiver.writeFully(buf);
                 }
             }
-            body = b;
-        }
-        yield(sender);
-        body.flip();
-        return body;
-    }
-    
-    ByteBuffer? body;
-    if (lazy) {
-        body = null;
-    } else {
-        body = eagerRead();
-    }
-    
-    ByteBuffer? readChunk() {
-        return nothing;
-    }
-    
-    variable ByteBuffer? latestChunk = null;
-    Integer lazyRead(ByteBuffer buffer) {
-        if (exists size) {
-            Integer available = buffer.available;
-            Integer amountRead = sender.read(buffer);
-            if (amountRead < available) {
-                yield(sender);
-            }
-            return amountRead;
+            body = null;
         } else {
-            // TODO chunked transfer encoding
-            // TODO transfer up to requestedAmount
-            while (buffer.available > 0) {
-                if (exists lc = latestChunk) {
-                    Integer requestedBytes = buffer.available;
-                    Integer leftoverBytes = lc.available;
-                    
-                    Integer transferAmount = min { leftoverBytes, requestedBytes };
-                    for (i in 0:transferAmount) {
-                        buffer.put(lc.get());
-                    }
-                    
-                    if (leftoverBytes <= requestedBytes) {
-                        latestChunk = null;
-                    }
+            // Read chunks as they come, combine into a single buffer
+            ByteBuffer buf = newByteBuffer(0);
+            while (true) {
+                Integer chunkLength = readNumerical(cr, hexDigit, base16accumulator);
+                expectBytes({ lf });
+                if (chunkLength == 0) {
+                    expectBytes({ cr, lf });
+                    break;
                 }
-                
-                if (!latestChunk exists) {
-                    ByteBuffer? newChunk = readChunk();
-                    if (exists newChunk) {
-                        latestChunk = newChunk;
-                    } else {
-                        // TODO need to return -1 if nothing read
-                        break;
-                    }
+                buf.resize(buf.capacity + chunkLength, true);
+                Integer bytesRead = sender.read(buf);
+                if (chunkLength != bytesRead) {
+                    throw ParseException("Premature EOF while reading body chunk");
                 }
             }
-            
-            // TODO when done reading, yield sender
-            return nothing;
+            buf.flip();
+            body = buf;
         }
     }
     
-    shared actual Integer read(ByteBuffer buffer) {
-        if (exists body) {
-            // TODO 
-            return nothing;
-        } else {
-            return lazyRead(buffer);
-        }
-    }
+    return Complete(proto, body);
 }
-
 
 //
 // Response
@@ -583,7 +516,7 @@ shared class Response(major, minor, status, reason, headers, body, resends) {
     shared String reason;
     shared Map<String,LinkedList<String>> headers;
     "[[null]] implies that the body has been sent to a chunkReceiver instead of being buffered."
-    shared ByteBuffer? body;
+    shared ByteBuffer? body; // TODO consider having 0 size buffer instead of null, would avoid requiring users to assert exists all the time
     shared List<Resend> resends;
     
     shared [Integer, Integer] http_version = [major, minor];
