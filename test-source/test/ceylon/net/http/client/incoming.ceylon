@@ -8,7 +8,9 @@ import ceylon.net.http.client {
     ChunkReceiver,
     receive,
     ReceiveResult,
-    Complete
+    Complete,
+    base16accumulator,
+    base10accumulator
 }
 import ceylon.io.charset {
     Charset,
@@ -18,6 +20,56 @@ import ceylon.io.charset {
 import ceylon.io.buffer {
     ByteBuffer,
     newByteBuffer
+}
+
+shared class AccumulatorTest() {
+    test
+    shared void base10() {
+        value a = base10accumulator;
+        assertEquals(utf8.encode("0").fold(0)(a), 0);
+        assertEquals(utf8.encode("1").fold(0)(a), 1);
+        assertEquals(utf8.encode("2").fold(0)(a), 2);
+        assertEquals(utf8.encode("9").fold(0)(a), 9);
+        
+        assertEquals(utf8.encode("10").fold(0)(a), 10);
+        assertEquals(utf8.encode("11").fold(0)(a), 11);
+        assertEquals(utf8.encode("19").fold(0)(a), 19);
+        
+        assertEquals(utf8.encode("9999").fold(0)(a), 9999);
+        assertEquals(utf8.encode("88888").fold(0)(a), 88888);
+    }
+    
+    test
+    shared void base16() {
+        value a = base16accumulator;
+        assertEquals(utf8.encode("0").fold(0)(a), 0);
+        assertEquals(utf8.encode("1").fold(0)(a), 1);
+        assertEquals(utf8.encode("2").fold(0)(a), 2);
+        assertEquals(utf8.encode("9").fold(0)(a), 9);
+        assertEquals(utf8.encode("a").fold(0)(a), 10);
+        assertEquals(utf8.encode("b").fold(0)(a), 11);
+        assertEquals(utf8.encode("A").fold(0)(a), 10);
+        assertEquals(utf8.encode("B").fold(0)(a), 11);
+        assertEquals(utf8.encode("g").fold(0)(a), 14);
+        assertEquals(utf8.encode("f").fold(0)(a), 15);
+        assertEquals(utf8.encode("G").fold(0)(a), 14);
+        assertEquals(utf8.encode("F").fold(0)(a), 15);
+        
+        assertEquals(utf8.encode("10").fold(0)(a), 16);
+        assertEquals(utf8.encode("11").fold(0)(a), 17);
+        assertEquals(utf8.encode("1f").fold(0)(a), 31);
+        assertEquals(utf8.encode("20").fold(0)(a), 32);
+        assertEquals(utf8.encode("2f").fold(0)(a), 47);
+        assertEquals(utf8.encode("30").fold(0)(a), 48);
+        
+        assertEquals(utf8.encode("ff").fold(0)(a), #ff);
+        assertEquals(utf8.encode("100").fold(0)(a), #100);
+        assertEquals(utf8.encode("101").fold(0)(a), #101);
+        assertEquals(utf8.encode("121").fold(0)(a), #121);
+        assertEquals(utf8.encode("1fe").fold(0)(a), #1fe);
+        assertEquals(utf8.encode("ffff").fold(0)(a), #ffff);
+        assertEquals(utf8.encode("ddddd").fold(0)(a), #ddddd);
+    }
 }
 
 shared class ReceiveTest() {

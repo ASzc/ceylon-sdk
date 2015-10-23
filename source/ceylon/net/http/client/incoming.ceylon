@@ -218,11 +218,11 @@ Byte lf = '\n'.integer.byte;
 Byte headerSep = ':'.integer.byte;
 
 // ((0 * 10 + 3) * 10 + 2) * 10 + 1 = 321
-Integer base10accumulator(Integer partial, Byte element) {
+shared Integer base10accumulator(Integer partial, Byte element) {
     return 10*partial + (element.signed - '0'.integer);
 }
 
-Integer base16accumulator(Integer partial, Byte element) {
+shared Integer base16accumulator(Integer partial, Byte element) {
     // Num/upperalpha/loweralpha are not contiguous in ascii
     Integer digit;
     if ('0'.integer <= element.signed <= '9'.integer) {
