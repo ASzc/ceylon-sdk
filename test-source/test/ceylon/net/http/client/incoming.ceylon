@@ -233,7 +233,7 @@ shared class ReceiveTest() {
         };
         assert (is Complete result);
         assertEquals(result.body.capacity, 87);
-        assertEquals(result.response.bodySize, 87);
+        assertEquals(result.response.bodySize, null);
         assertEquals(utf8.decode(result.body), "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ");
         
         assertEquals(result.response.major, 1);

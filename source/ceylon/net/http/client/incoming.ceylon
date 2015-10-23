@@ -485,7 +485,6 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
                 Integer chunkLength = readNumerical(cr, hexDigit, base16accumulator);
                 expectBytes({ lf });
                 if (chunkLength == 0) {
-                    expectBytes({ cr, lf });
                     break;
                 }
                 buf.resize(buf.capacity + chunkLength, true);
@@ -493,6 +492,7 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
                 if (chunkLength != bytesRead) {
                     throw ParseException("Premature EOF while reading body chunk");
                 }
+                expectBytes({ cr, lf });
             }
             buf.flip();
             body = buf;
