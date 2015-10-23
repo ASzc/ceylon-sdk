@@ -234,7 +234,7 @@ shared Integer base16accumulator(Integer partial, Byte element) {
     } else {
         throw ParseException("Non-hexadecimal digit ``element`` encountered");
     }
-    return 16*partial + digit; // TODO
+    return 16*partial + digit;
 }
 
 //
