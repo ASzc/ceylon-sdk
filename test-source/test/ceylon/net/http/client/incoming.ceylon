@@ -50,9 +50,9 @@ shared class AccumulatorTest() {
         assertEquals(utf8.encode("b").fold(0)(a), 11);
         assertEquals(utf8.encode("A").fold(0)(a), 10);
         assertEquals(utf8.encode("B").fold(0)(a), 11);
-        assertEquals(utf8.encode("g").fold(0)(a), 14);
+        assertEquals(utf8.encode("e").fold(0)(a), 14);
         assertEquals(utf8.encode("f").fold(0)(a), 15);
-        assertEquals(utf8.encode("G").fold(0)(a), 14);
+        assertEquals(utf8.encode("E").fold(0)(a), 14);
         assertEquals(utf8.encode("F").fold(0)(a), 15);
         
         assertEquals(utf8.encode("10").fold(0)(a), 16);
