@@ -245,8 +245,30 @@ shared class ReceiveTest() {
     }
     
     test
-    shared void text_unbuffered_unchunked() {
-        // TODO checkReciever with Content-Length response
+    shared void text_unbuffered_unchunked_stringfn() {
+        variable String? body = null;
+        void collect(String chunk) {
+            body = chunk;
+        }
+        value result = simulate {
+            chunkReceiver = collect;
+            """HTTP/1.1 200 OK
+               Content-Type: text/plain; charset=UTF-8
+               Content-Length: 87
+               
+               ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ"""
+        };
+        assert (is Complete result);
+        assertEquals(result.body.capacity, 0);
+        assertEquals(result.response.bodySize, 87);
+        assertEquals(body, "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ");
+        
+        assertEquals(result.response.major, 1);
+        assertEquals(result.response.minor, 1);
+        assertEquals(result.response.status, 200);
+        assertEquals(result.response.reason, "OK");
+        
+        assertEquals(result.response.headers.size, 2);
     }
     
     test
