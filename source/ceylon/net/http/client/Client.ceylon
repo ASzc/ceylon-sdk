@@ -275,7 +275,7 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                         minor = result.response.minor;
                         status = result.response.status;
                         reason = result.response.reason;
-                        headers = result.response.headers;
+                        fullHeaders = result.response.headers;
                         body = result.body;
                         resends = resends;
                     };

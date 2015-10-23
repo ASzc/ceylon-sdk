@@ -518,16 +518,25 @@ shared class ProtoResponse(major, minor, status, reason, headers) {
 }
 
 "A complete HTTP response"
-shared class Response(major, minor, status, reason, headers, body, resends) {
+shared class Response(major, minor, status, reason, fullHeaders, body, resends) {
     Integer major;
     Integer minor;
     shared Integer status;
     shared String reason;
-    shared Map<String,LinkedList<String>> headers;
-    "[[null]] implies that the body has been sent to a chunkReceiver instead of being buffered."
+    shared Map<String,List<String>> fullHeaders;
+    "Will be empty if the body has been sent to a chunkReceiver instead of being buffered."
     shared ByteBuffer body;
     shared List<Resend> resends;
     
     shared [Integer, Integer] http_version = [major, minor];
     shared Integer bodySize = body.capacity;
+    // TODO "view" of fullHeaders with only one value (first?), see Map.patch for impl. example
+    shared Map<String,String> headers = nothing;
+    
+    // TODO lazy JsonValue, parse from body transparently.
+    shared Anything bodyJson => nothing;
+    // TODO lazy, parse from body transparently
+    shared String bodyText => nothing;
+    // TODO lazy, parse from body transparently
+    shared Parameters bodyParameters => nothing;
 }
