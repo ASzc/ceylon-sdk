@@ -63,7 +63,7 @@ shared alias Parameters => Map<String,String>;
 shared alias StreamBody => FileDescriptor|ByteBuffer(Charset?)|String(Charset);
 shared alias FixedBody => Parameters|ByteBuffer|String;
 shared alias Body => StreamBody|FixedBody;
-shared alias ChunkReceiver => Boolean(String)|Boolean(ByteBuffer, Charset?)|FileDescriptor;
+shared alias ChunkReceiver => Anything(String)|Anything(ByteBuffer, Charset?)|FileDescriptor;
 
 "For sending HTTP messages to servers and receiving replies."
 shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePorts) {

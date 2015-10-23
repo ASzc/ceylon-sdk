@@ -426,11 +426,11 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
             while (buf.available == 0) {
                 bytesRead += buf.capacity;
                 buf.flip();
-                if (is Boolean(String) chunkReceiver) {
+                if (is Anything(String) chunkReceiver) {
                     Charset charset = proto.bodyCharset;
                     String chunkString = charset.decode(buf);
                     chunkReceiver(chunkString);
-                } else if (is Boolean(ByteBuffer, Charset?) chunkReceiver) {
+                } else if (is Anything(ByteBuffer, Charset?) chunkReceiver) {
                     chunkReceiver(buf, proto.bodyCharset);
                 } else {
                     chunkReceiver.writeFully(buf);
@@ -467,11 +467,11 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
                     throw ParseException("Premature EOF while reading body chunk");
                 }
                 buf.flip();
-                if (is Boolean(String) chunkReceiver) {
+                if (is Anything(String) chunkReceiver) {
                     Charset charset = proto.bodyCharset;
                     String chunkString = charset.decode(buf);
                     chunkReceiver(chunkString);
-                } else if (is Boolean(ByteBuffer, Charset?) chunkReceiver) {
+                } else if (is Anything(ByteBuffer, Charset?) chunkReceiver) {
                     chunkReceiver(buf, proto.bodyCharset);
                 } else {
                     chunkReceiver.writeFully(buf);
