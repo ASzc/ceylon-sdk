@@ -13,7 +13,8 @@ import ceylon.io.buffer {
 }
 import ceylon.io.charset {
     utf8,
-    Charset
+    Charset,
+    getCharset
 }
 import ceylon.io.readers {
     FileDescriptorReader,
@@ -426,7 +427,7 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
                 bytesRead += buf.capacity;
                 buf.flip();
                 if (is Boolean(String) chunkReceiver) {
-                    Charset charset = proto.bodyCharset else utf8;
+                    Charset charset = proto.bodyCharset;
                     String chunkString = charset.decode(buf);
                     chunkReceiver(chunkString);
                 } else if (is Boolean(ByteBuffer, Charset?) chunkReceiver) {
@@ -467,7 +468,7 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
                 }
                 buf.flip();
                 if (is Boolean(String) chunkReceiver) {
-                    Charset charset = proto.bodyCharset else utf8;
+                    Charset charset = proto.bodyCharset;
                     String chunkString = charset.decode(buf);
                     chunkReceiver(chunkString);
                 } else if (is Boolean(ByteBuffer, Charset?) chunkReceiver) {
@@ -513,8 +514,36 @@ shared class ProtoResponse(major, minor, status, reason, headers) {
     shared String reason;
     shared Map<String,LinkedList<String>> headers;
     
-    shared Integer? bodySize = nothing; //TODO get from headers
-    shared Charset? bodyCharset = nothing; //TODO get from headers
+    // https://tools.ietf.org/html/rfc7230#section-3.3.3
+    shared Integer? bodySize;
+    if (exists encs = headers.get("Transfer-Encoding"),
+        exists enc = encs.last,
+        enc == "chunked") {
+        bodySize = null;
+    } else if (exists lengths = headers.get("Content-Length"),
+        exists lenStr = lengths.last,
+        exists len = parseInteger(lenStr)) {
+        bodySize = len;
+    } else {
+        bodySize = 0;
+    }
+    
+    // https://tools.ietf.org/html/rfc2045#section-5
+    // TODO probably need a seperate MIME parsing library in future
+    shared Charset bodyCharset;
+    if (exists cts = headers.get("Content-Type"),
+        exists ctStr = cts.last,
+        exists start = ctStr.firstInclusion("charset=")) {
+        String charsetName;
+        if (exists end = ctStr.firstInclusion(" ", start)) {
+            charsetName = ctStr.span(start, end);
+        } else {
+            charsetName = ctStr.spanFrom(start);
+        }
+        bodyCharset = getCharset(charsetName) else utf8;
+    } else {
+        bodyCharset = utf8;
+    }
 }
 
 "A complete HTTP response"
