@@ -56,7 +56,7 @@ shared class ResendMods(
 shared abstract class ReceiveResult() of Complete | Resend {}
 shared class Complete(response, body) extends ReceiveResult() {
     shared ProtoResponse response;
-    shared ByteBuffer? body;
+    shared ByteBuffer body;
 }
 shared class Resend(response, mods) extends ReceiveResult() {
     shared ProtoResponse response;
@@ -147,8 +147,7 @@ shared String basicAuthHeader(String user, String pass) {
     return nothing;
 }
 
-shared ResendMods? realmAwareBasicAuth(credentials)(response) {
-    Map<String,[String, String]> credentials;
+shared ResendMods? realmAwareBasicAuth(Map<String,[String, String]> credentials)(response) {
     ProtoResponse response;
     // TODO 
     return nothing;
@@ -242,19 +241,19 @@ Integer base16accumulator(Integer partial, Byte element) {
 //
 
 by ("Alex Szczuczko", "Stéphane Épardaud")
-shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
-    FileDescriptor sender;
+shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkReceiver) {
+    Byte?() readByte;
+    Integer(ByteBuffer) readBuf;
+    Anything() close;
     {ProtoCallback*} protoCallbacks;
     ChunkReceiver? chunkReceiver;
-    
-    value reader = FileDescriptorReader(sender);
     
     //
     // "Expect", either wholly known values, or known length
     //
     void expectBytes({Byte*} expected) {
         for (char in expected) {
-            if (exists b = reader.readByte()) {
+            if (exists b = readByte()) {
                 if (b != char) {
                     throw OutOfSequenceCharacter(b, char, expected);
                 }
@@ -264,7 +263,7 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
         }
     }
     Byte expectByteIn(Set<Byte> expected) {
-        if (exists b = reader.readByte()) {
+        if (exists b = readByte()) {
             if (!b in expected) {
                 throw UnexpectedCharacter(b, expected);
             }
@@ -298,7 +297,7 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
         buffer.putByte(byte);
     }
     Byte read() {
-        if (exists b = reader.readByte()) {
+        if (exists b = readByte()) {
             return b;
         } else {
             throw ParseException("Premature EOF while reading sequence");
@@ -393,8 +392,8 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
         // Finish reading otherwise socket can't be reused
         if (exists bodySize = proto.bodySize) {
             ByteBuffer buf = newByteBuffer(min { bodySize, limit });
-            if (sender.read(buf) == limit) {
-                sender.close();
+            if (readBuf(buf) == limit) {
+                close();
             }
             // otherwise we've read the entire body, socket is safe to reuse
         } else {
@@ -414,7 +413,7 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
         throw;
     }
     
-    ByteBuffer? body;
+    ByteBuffer body;
     // TODO Socket read timeout is required to recover from bodySize being greater than the actual body size.
     if (exists bodySize = proto.bodySize) {
         variable Integer bytesRead = 0;
@@ -422,7 +421,7 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
         if (exists chunkReceiver) {
             // Simulate chunk(s) of at most 4 MiB
             ByteBuffer buf = newByteBuffer(min { bodySize, 4 * (2 ^ 20) });
-            sender.read(buf);
+            readBuf(buf);
             while (buf.available == 0) {
                 bytesRead += buf.capacity;
                 buf.flip();
@@ -435,14 +434,14 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
                 } else {
                     chunkReceiver.writeFully(buf);
                 }
-                sender.read(buf);
+                readBuf(buf);
             }
             bytesRead += buf.capacity-buf.available;
-            body = null;
+            body = newByteBuffer(0);
         } else {
             // Read entire body into a single buffer
             ByteBuffer buf = newByteBuffer(bodySize);
-            bytesRead = sender.read(buf);
+            bytesRead = readBuf(buf);
             buf.flip();
             body = buf;
         }
@@ -462,7 +461,7 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
                     break;
                 }
                 buf.resize(chunkLength, true);
-                Integer bytesRead = sender.read(buf);
+                Integer bytesRead = readBuf(buf);
                 if (chunkLength != bytesRead) {
                     throw ParseException("Premature EOF while reading body chunk");
                 }
@@ -477,7 +476,7 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
                     chunkReceiver.writeFully(buf);
                 }
             }
-            body = null;
+            body = newByteBuffer(0);
         } else {
             // Read chunks as they come, combine into a single buffer
             ByteBuffer buf = newByteBuffer(0);
@@ -489,7 +488,7 @@ shared ReceiveResult receive(sender, protoCallbacks, chunkReceiver) {
                     break;
                 }
                 buf.resize(buf.capacity + chunkLength, true);
-                Integer bytesRead = sender.read(buf);
+                Integer bytesRead = readBuf(buf);
                 if (chunkLength != bytesRead) {
                     throw ParseException("Premature EOF while reading body chunk");
                 }
@@ -526,8 +525,9 @@ shared class Response(major, minor, status, reason, headers, body, resends) {
     shared String reason;
     shared Map<String,LinkedList<String>> headers;
     "[[null]] implies that the body has been sent to a chunkReceiver instead of being buffered."
-    shared ByteBuffer? body; // TODO consider having 0 size buffer instead of null, would avoid requiring users to assert exists all the time
+    shared ByteBuffer body;
     shared List<Resend> resends;
     
     shared [Integer, Integer] http_version = [major, minor];
+    shared Integer bodySize = body.capacity;
 }

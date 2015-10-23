@@ -198,8 +198,8 @@ shared class BuildMessageTest() {
             "example.com";
             "/";
             null;
-            parameters => HashMap<String,String?> { "queryKey"->"queryValue" };
-            body = HashMap<String,String?> { "bodyKey1"->"bodyValue1", "bodyKey2"->"bodyValue2" };
+            parameters => HashMap<String,String> { "queryKey"->"queryValue" };
+            body = HashMap<String,String> { "bodyKey1"->"bodyValue1", "bodyKey2"->"bodyValue2" };
         };
         assertEquals {
             utf8.decode(message[0]);

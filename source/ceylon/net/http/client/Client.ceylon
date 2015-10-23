@@ -26,6 +26,9 @@ import ceylon.net.uri {
 import java.io {
     IOException
 }
+import ceylon.io.readers {
+    FileDescriptorReader
+}
 
 // TODO add superclass to group these exceptions
 
@@ -262,7 +265,8 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
                 // Write the body after we're fairly sure the socket is ok
                 message[1](socket);
                 
-                result = receive(socket, protoCallbacks, chunkReceiver);
+                value reader = FileDescriptorReader(socket);
+                result = receive(reader.readByte, socket.read, socket.close, protoCallbacks, chunkReceiver);
                 
                 switch (result)
                 case (is Complete) {
