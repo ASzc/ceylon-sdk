@@ -23,8 +23,6 @@ shared String capitaliseHeaderName(String headerName) {
     return builder.string;
 }
 
-// TODO make name always conform to capitaliseHeaderName?
-// TODO convert to immutable
 "Represents an HTTP Header"
 by("Stéphane Épardaud")
 shared class Header(name, String* initialValues) {

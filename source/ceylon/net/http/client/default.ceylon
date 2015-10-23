@@ -5,8 +5,7 @@ import ceylon.io.buffer {
     ByteBuffer
 }
 import ceylon.net.http {
-    Header,
-    Message
+    Header
 }
 import ceylon.net.uri {
     Uri,

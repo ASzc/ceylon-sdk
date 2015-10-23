@@ -14,7 +14,6 @@ import ceylon.io.charset {
     Charset
 }
 import ceylon.net.http {
-    Message,
     Method,
     getMethod=get,
     postMethod=post

@@ -21,7 +21,6 @@ import ceylon.io.readers {
     Reader
 }
 import ceylon.net.http {
-    Message,
     capitaliseHeaderName,
     Method,
     getMethod=get
