@@ -363,4 +363,6 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
     }
     
     // TODO ...
+    
+    // TODO Can websockets be handled with the existing API (if so, provide a shortcut method)?
 }
