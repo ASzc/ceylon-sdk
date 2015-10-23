@@ -1,6 +1,3 @@
-import ceylon.net.http.client {
-    Request
-}
 import ceylon.net.iop {
     eq
 }
@@ -143,10 +140,5 @@ shared class Uri(scheme = null,
         hash = 31*hash + query.hash;
         hash = 31*hash + (fragment?.hash else 0);
         return hash;
-    }
-
-    "Returns a GET HTTP request"
-    shared Request get() {
-        return Request(this);
     }
 }
