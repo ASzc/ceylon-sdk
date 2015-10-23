@@ -220,7 +220,8 @@ shared [ByteBuffer, Anything(FileDescriptor|Anything(ByteBuffer))] buildMessage(
         
         // Read any available parameters of Content-Type
         {String*} params = typeNameAndParams.rest;
-        if (exists charsetParam = params.findLast((elem) => elem.trimmed.startsWith("charset=")),
+        if (!parsedBodyCharset exists,
+            exists charsetParam = params.findLast((elem) => elem.trimmed.startsWith("charset=")),
             exists charsetParamValue = charsetParam.split((ch) => ch == '=').getFromFirst(1)) {
             contentTypeCharset = getCharset(charsetParamValue.trimmed) else utf8;
         } else {
