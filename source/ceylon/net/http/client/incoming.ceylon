@@ -411,7 +411,7 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
         }
     } catch (Exception e) {
         drain();
-        throw;
+        throw e;
     }
     
     ByteBuffer body;
