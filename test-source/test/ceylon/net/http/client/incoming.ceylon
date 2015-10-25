@@ -142,6 +142,15 @@ shared class ReceiveTest() {
         return result;
     }
     
+    void assertStandardMessagePreamble(Complete result) {
+        assertEquals(result.response.major, 1);
+        assertEquals(result.response.minor, 1);
+        assertEquals(result.response.status, 200);
+        assertEquals(result.response.reason, "OK");
+        
+        assertEquals(result.response.headers.size, 2);
+    }
+    
     test
     shared void nobody_200() {
         value result = simulate { """HTTP/1.1 200 OK
@@ -190,12 +199,7 @@ shared class ReceiveTest() {
         assertEquals(result.response.bodySize, 87);
         assertEquals(utf8.decode(result.body), "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ");
         
-        assertEquals(result.response.major, 1);
-        assertEquals(result.response.minor, 1);
-        assertEquals(result.response.status, 200);
-        assertEquals(result.response.reason, "OK");
-        
-        assertEquals(result.response.headers.size, 2);
+        assertStandardMessagePreamble(result);
     }
     
     test
@@ -213,12 +217,7 @@ shared class ReceiveTest() {
         assertEquals(result.response.bodySize, 58);
         assertEquals(utf16.decode(result.body), "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ");
         
-        assertEquals(result.response.major, 1);
-        assertEquals(result.response.minor, 1);
-        assertEquals(result.response.status, 200);
-        assertEquals(result.response.reason, "OK");
-        
-        assertEquals(result.response.headers.size, 2);
+        assertStandardMessagePreamble(result);
     }
     
     test
@@ -244,12 +243,7 @@ shared class ReceiveTest() {
         assertEquals(result.response.bodySize, null);
         assertEquals(utf8.decode(result.body), "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ");
         
-        assertEquals(result.response.major, 1);
-        assertEquals(result.response.minor, 1);
-        assertEquals(result.response.status, 200);
-        assertEquals(result.response.reason, "OK");
-        
-        assertEquals(result.response.headers.size, 2);
+        assertStandardMessagePreamble(result);
     }
     
     test
@@ -271,12 +265,7 @@ shared class ReceiveTest() {
         assertEquals(result.response.bodySize, 87);
         assertEquals(body, "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ");
         
-        assertEquals(result.response.major, 1);
-        assertEquals(result.response.minor, 1);
-        assertEquals(result.response.status, 200);
-        assertEquals(result.response.reason, "OK");
-        
-        assertEquals(result.response.headers.size, 2);
+        assertStandardMessagePreamble(result);
     }
     
     test
@@ -314,12 +303,7 @@ shared class ReceiveTest() {
             assertEquals(body.get(), expectedBody.get());
         }
         
-        assertEquals(result.response.major, 1);
-        assertEquals(result.response.minor, 1);
-        assertEquals(result.response.status, 200);
-        assertEquals(result.response.reason, "OK");
-        
-        assertEquals(result.response.headers.size, 2);
+        assertStandardMessagePreamble(result);
     }
     
     test
@@ -354,12 +338,7 @@ shared class ReceiveTest() {
         body.flip();
         assertEquals(utf8.decode(body), "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ");
         
-        assertEquals(result.response.major, 1);
-        assertEquals(result.response.minor, 1);
-        assertEquals(result.response.status, 200);
-        assertEquals(result.response.reason, "OK");
-        
-        assertEquals(result.response.headers.size, 2);
+        assertStandardMessagePreamble(result);
     }
     
     // TODO drain tests (chunked/unchunked, closed/unclosed)
