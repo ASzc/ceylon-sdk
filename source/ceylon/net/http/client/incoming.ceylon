@@ -421,9 +421,12 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
         if (exists chunkReceiver) {
             // Simulate chunk(s) of at most 4 MiB
             ByteBuffer buf = newByteBuffer(min { bodySize, 4 * (2 ^ 20) });
-            readBuf(buf);
-            while (buf.available == 0) {
-                bytesRead += buf.capacity;
+            while (true) {
+                Integer newBytesRead = readBuf(buf);
+                if (newBytesRead <= 0) {
+                    break;
+                }
+                bytesRead += newBytesRead;
                 buf.flip();
                 if (is Anything(String) chunkReceiver) {
                     Charset charset = proto.bodyCharset;
@@ -434,9 +437,8 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
                 } else {
                     chunkReceiver.writeFully(buf);
                 }
-                readBuf(buf);
+                buf.clear();
             }
-            bytesRead += buf.capacity-buf.available;
             body = newByteBuffer(0);
         } else {
             // Read entire body into a single buffer
@@ -446,7 +448,7 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
             body = buf;
         }
         if (bodySize != bytesRead) {
-            throw ParseException("Premature EOF while reading body");
+            throw ParseException("Premature EOF while reading body, expecting ``bodySize`` bytes, got ``bytesRead`` instead");
         }
     } else {
         // Unknown size body (Chunked Transfer Encoding)

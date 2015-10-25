@@ -110,6 +110,9 @@ shared class ReceiveTest() {
             }
         }
         Integer readBuf(ByteBuffer otherBuf) {
+            if (otherBuf.hasAvailable && !buf.hasAvailable) {
+                return -1;
+            }
             variable Integer count = 0;
             while (otherBuf.hasAvailable && buf.hasAvailable) {
                 otherBuf.put(buf.get());
