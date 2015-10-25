@@ -428,14 +428,20 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
                 }
                 bytesRead += newBytesRead;
                 buf.flip();
-                if (is Anything(String) chunkReceiver) {
+                if (is FileDescriptor chunkReceiver) {
+                    chunkReceiver.writeFully(buf);
+                } else if (is Anything(ByteBuffer) chunkReceiver) {
+                    chunkReceiver(buf);
+                } else if (is Anything(ByteBuffer, ProtoResponse) chunkReceiver) {
+                    chunkReceiver(buf, proto);
+                } else {
                     Charset charset = proto.bodyCharset;
                     String chunkString = charset.decode(buf);
-                    chunkReceiver(chunkString);
-                } else if (is Anything(ByteBuffer, Charset?) chunkReceiver) {
-                    chunkReceiver(buf, proto.bodyCharset);
-                } else {
-                    chunkReceiver.writeFully(buf);
+                    if (is Anything(String) chunkReceiver) {
+                        chunkReceiver(chunkString);
+                    } else {
+                        chunkReceiver(chunkString, proto);
+                    }
                 }
                 buf.clear();
             }
@@ -468,14 +474,20 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
                     throw ParseException("Premature EOF while reading body chunk");
                 }
                 buf.flip();
-                if (is Anything(String) chunkReceiver) {
+                if (is FileDescriptor chunkReceiver) {
+                    chunkReceiver.writeFully(buf);
+                } else if (is Anything(ByteBuffer) chunkReceiver) {
+                    chunkReceiver(buf);
+                } else if (is Anything(ByteBuffer, ProtoResponse) chunkReceiver) {
+                    chunkReceiver(buf, proto);
+                } else {
                     Charset charset = proto.bodyCharset;
                     String chunkString = charset.decode(buf);
-                    chunkReceiver(chunkString);
-                } else if (is Anything(ByteBuffer, Charset?) chunkReceiver) {
-                    chunkReceiver(buf, proto.bodyCharset);
-                } else {
-                    chunkReceiver.writeFully(buf);
+                    if (is Anything(String) chunkReceiver) {
+                        chunkReceiver(chunkString);
+                    } else {
+                        chunkReceiver(chunkString, proto);
+                    }
                 }
             }
             body = newByteBuffer(0);

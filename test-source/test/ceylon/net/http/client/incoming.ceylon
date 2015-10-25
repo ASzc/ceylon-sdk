@@ -282,7 +282,7 @@ shared class ReceiveTest() {
     test
     shared void text_unbuffered_unchunked_bytebufferfn() {
         ByteBuffer body = newByteBuffer(0);
-        void collect(ByteBuffer chunk, Charset? c) {
+        void collect(ByteBuffer chunk) {
             body.resize(body.capacity + chunk.available, true);
             for (b in chunk) {
                 body.put(b);

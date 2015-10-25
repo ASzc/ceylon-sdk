@@ -62,7 +62,7 @@ shared alias Parameters => Map<String,String>;
 shared alias StreamBody => FileDescriptor|ByteBuffer(Charset?)|String(Charset);
 shared alias FixedBody => Parameters|ByteBuffer|String;
 shared alias Body => StreamBody|FixedBody;
-shared alias ChunkReceiver => Anything(String)|Anything(ByteBuffer, Charset?)|FileDescriptor;
+shared alias ChunkReceiver => Anything(String)|Anything(String, ProtoResponse)|Anything(ByteBuffer)|Anything(ByteBuffer, ProtoResponse)|FileDescriptor;
 
 "For sending HTTP messages to servers and receiving replies."
 shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePorts) {
@@ -172,7 +172,6 @@ shared class Client(poolManager = PoolManager(), schemePorts = defaultSchemePort
          when re-sent. Also, it is generally only safe to retry [idempotent]
          (https://tools.ietf.org/html/rfc7231#section-4.2.2) methods."
         {ProtoCallback*} protoCallbacks;
-        
         
         // TODO These arguments are probably going to require modifiying ceylon.io:
         // TODO  - (timeout) Socket connect and read timeout
