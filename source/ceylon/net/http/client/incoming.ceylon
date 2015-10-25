@@ -465,13 +465,13 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
                 Integer chunkLength = readNumerical(cr, hexDigit, base16accumulator);
                 expectBytes({ lf });
                 if (chunkLength == 0) {
-                    expectBytes({ cr, lf });
                     break;
                 }
                 buf.resize(chunkLength, true);
                 Integer bytesRead = readBuf(buf);
+                expectBytes({ cr, lf });
                 if (chunkLength != bytesRead) {
-                    throw ParseException("Premature EOF while reading body chunk");
+                    throw ParseException("Premature EOF while reading body chunk, expecting ``chunkLength`` bytes, got ``bytesRead`` instead");
                 }
                 buf.flip();
                 if (is FileDescriptor chunkReceiver) {
@@ -489,6 +489,7 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
                         chunkReceiver(chunkString, proto);
                     }
                 }
+                buf.clear();
             }
             body = newByteBuffer(0);
         } else {
@@ -503,7 +504,7 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
                 buf.resize(buf.capacity + chunkLength, true);
                 Integer bytesRead = readBuf(buf);
                 if (chunkLength != bytesRead) {
-                    throw ParseException("Premature EOF while reading body chunk");
+                    throw ParseException("Premature EOF while reading body chunk, expecting ``chunkLength`` bytes, got ``bytesRead`` instead");
                 }
                 expectBytes({ cr, lf });
             }

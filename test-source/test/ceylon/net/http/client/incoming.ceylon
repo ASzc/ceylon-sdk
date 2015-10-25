@@ -324,6 +324,41 @@ shared class ReceiveTest() {
     
     test
     shared void text_unbuffered_chunked() {
-        // TODO checkReciever with T-E: chunked response
+        ByteBuffer body = newByteBuffer(0);
+        void collect(ByteBuffer chunk) {
+            body.resize(body.capacity + chunk.available, true);
+            for (b in chunk) {
+                body.put(b);
+            }
+        }
+        value result = simulate {
+            chunkReceiver = collect;
+            """HTTP/1.1 200 OK
+               Content-Type: text/plain; charset=UTF-8
+               Transfer-Encoding: chunked
+               
+               """,
+            // printf '%x\n' "$(printf 'ᚠᛇᚻ᛫ᛒᛦᚦ᛫' | wc -c)"
+            "18\n",
+            "ᚠᛇᚻ᛫ᛒᛦᚦ᛫\n",
+            "21\n",
+            "ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ\n",
+            "3\n",
+            "᛫\n",
+            "1b\n",
+            "ᚷᛖᚻᚹᛦᛚᚳᚢᛗ\n\n"
+        };
+        assert (is Complete result);
+        assertEquals(result.body.capacity, 0);
+        assertEquals(result.response.bodySize, null);
+        body.flip();
+        assertEquals(utf8.decode(body), "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ");
+        
+        assertEquals(result.response.major, 1);
+        assertEquals(result.response.minor, 1);
+        assertEquals(result.response.status, 200);
+        assertEquals(result.response.reason, "OK");
+        
+        assertEquals(result.response.headers.size, 2);
     }
 }
