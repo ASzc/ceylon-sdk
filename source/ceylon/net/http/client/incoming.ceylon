@@ -397,7 +397,25 @@ shared ReceiveResult receive(readByte, readBuf, close, protoCallbacks, chunkRece
             }
             // otherwise we've read the entire body, socket is safe to reuse
         } else {
-            // TODO read chunks, close if total reaches limit
+            // Read chunks, close if total reaches limit
+            variable Integer total = 0;
+            while (true) {
+                ByteBuffer buf = newByteBuffer(0);
+                Integer chunkLength = readNumerical(cr, hexDigit, base16accumulator);
+                expectBytes({ lf });
+                if (chunkLength == 0) {
+                    // we've read the entire body, socket is safe to reuse
+                    break;
+                }
+                total += chunkLength;
+                if (total > limit) {
+                    close();
+                    break;
+                }
+                buf.clear();
+                buf.resize(chunkLength, true);
+                readBuf(buf);
+            }
         }
     }
     
