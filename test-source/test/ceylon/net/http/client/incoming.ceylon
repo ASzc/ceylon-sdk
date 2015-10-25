@@ -19,7 +19,8 @@ import ceylon.io.charset {
 }
 import ceylon.io.buffer {
     ByteBuffer,
-    newByteBuffer
+    newByteBuffer,
+    newByteBufferWithData
 }
 
 shared class AccumulatorTest() {
@@ -78,23 +79,27 @@ shared class ReceiveTest() {
         protoCallbacks = empty,
         chunkReceiver = null,
         expectClose = false) {
-        {String|[String, Charset]*} responseParts;
+        {String|[String, Charset]|ByteBuffer*} responseParts;
         {ProtoCallback*} protoCallbacks;
         ChunkReceiver? chunkReceiver;
         Boolean expectClose;
         
         ByteBuffer buf = newByteBuffer(0);
         for (responsePart in responseParts) {
+            ByteBuffer partBuf;
             String text;
             Charset charset;
             if (is String responsePart) {
                 text = responsePart;
                 charset = utf8;
-            } else {
+                partBuf = charset.encode(text.replace("\n", "\r\n"));
+            } else if (is [String, Charset] responsePart) {
                 text = responsePart[0];
                 charset = responsePart[1];
+                partBuf = charset.encode(text.replace("\n", "\r\n"));
+            } else {
+                partBuf = responsePart;
             }
-            ByteBuffer partBuf = charset.encode(text.replace("\n", "\r\n"));
             buf.resize(buf.capacity + partBuf.available, true);
             for (b in partBuf) {
                 buf.put(b);
@@ -265,6 +270,49 @@ shared class ReceiveTest() {
         assertEquals(result.body.capacity, 0);
         assertEquals(result.response.bodySize, 87);
         assertEquals(body, "ᚠᛇᚻ᛫ᛒᛦᚦ᛫ᚠᚱᚩᚠᚢᚱ᛫ᚠᛁᚱᚪ᛫ᚷᛖᚻᚹᛦᛚᚳᚢᛗ");
+        
+        assertEquals(result.response.major, 1);
+        assertEquals(result.response.minor, 1);
+        assertEquals(result.response.status, 200);
+        assertEquals(result.response.reason, "OK");
+        
+        assertEquals(result.response.headers.size, 2);
+    }
+    
+    test
+    shared void text_unbuffered_unchunked_bytebufferfn() {
+        ByteBuffer body = newByteBuffer(0);
+        void collect(ByteBuffer chunk, Charset? c) {
+            body.resize(body.capacity + chunk.available, true);
+            for (b in chunk) {
+                body.put(b);
+            }
+        }
+        // Large enough to exceed 4MiB simulated chunk size
+        // Two 4MiB chunks, plus one 1B chunk
+        value size = 2 * (4 * (2 ^ 20) + 1);
+        ByteBuffer expectedBody = newByteBufferWithData(*{ 'A'.integer.byte }.repeat(size));
+        value result = simulate {
+            chunkReceiver = collect;
+            """HTTP/1.1 200 OK
+               Content-Type: text/plain; charset=UTF-8
+               Content-Length: """,
+            size.string,
+            """
+               
+               """,
+            expectedBody
+        };
+        assert (is Complete result);
+        assertEquals(result.body.capacity, 0);
+        assertEquals(result.response.bodySize, size);
+        body.position = 0;
+        expectedBody.position = 0;
+        assertEquals(body.available, expectedBody.available);
+        //assertEquals(body, expectedBody);
+        for (i in 0:body.available) {
+            assertEquals(body.get(), expectedBody.get());
+        }
         
         assertEquals(result.response.major, 1);
         assertEquals(result.response.minor, 1);
