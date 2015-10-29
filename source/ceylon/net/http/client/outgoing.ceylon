@@ -20,6 +20,10 @@ import ceylon.net.http {
 import ceylon.net.uri {
     percentEncoder
 }
+import ceylon.json {
+    JsonObject=Object,
+    JsonArray=Array
+}
 
 shared String terminator = "\r\n";
 
@@ -122,6 +126,7 @@ shared [ByteBuffer, Anything(FileDescriptor|Anything(ByteBuffer))] buildMessage(
     String? query;
     Parameters parameters;
     Headers headers;
+    // TODO handle new JsonObject|JsonArray types for body
     Body? body;
     Charset|String? bodyCharset;
     

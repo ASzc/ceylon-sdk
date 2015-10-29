@@ -13,6 +13,10 @@ import ceylon.io.buffer {
 import ceylon.io.charset {
     Charset
 }
+import ceylon.json {
+    JsonObject=Object,
+    JsonArray=Array
+}
 import ceylon.net.http {
     Method,
     getMethod=get,
@@ -20,7 +24,8 @@ import ceylon.net.http {
 }
 import ceylon.net.uri {
     Uri,
-    parse
+    parse,
+    Parameter
 }
 import java.io {
     IOException
@@ -57,10 +62,12 @@ Map<String,Integer> createDefaultSchemePorts() {
 }
 shared Map<String,Integer> defaultSchemePorts = createDefaultSchemePorts();
 
+// TODO should accept {Header*} as well?
 shared alias Headers => Map<String,String|{String*}>;
+// TODO should accept {Parameter*} as well?
 shared alias Parameters => Map<String,String>;
 shared alias StreamBody => FileDescriptor|ByteBuffer(Charset?)|String(Charset);
-shared alias FixedBody => Parameters|ByteBuffer|String;
+shared alias FixedBody => Parameters|ByteBuffer|String|JsonObject|JsonArray;
 shared alias Body => StreamBody|FixedBody;
 shared alias ChunkReceiver => Anything(String)|Anything(String, ProtoResponse)|Anything(ByteBuffer)|Anything(ByteBuffer, ProtoResponse)|FileDescriptor;
 
