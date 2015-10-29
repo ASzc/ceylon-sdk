@@ -62,6 +62,7 @@ module ceylon.net "1.2.1" {
     
     shared import ceylon.collection "1.2.1";
     shared import ceylon.io "1.2.1";
+    shared import ceylon.json "1.2.1";
     import ceylon.file "1.2.1";
     
     // -- java modules --
