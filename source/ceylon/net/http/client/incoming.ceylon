@@ -20,6 +20,10 @@ import ceylon.io.readers {
     FileDescriptorReader,
     Reader
 }
+import ceylon.json {
+    JsonValue=Value,
+    jsonParse=parse
+}
 import ceylon.net.http {
     capitaliseHeaderName,
     Method,
@@ -28,7 +32,9 @@ import ceylon.net.http {
 import ceylon.net.uri {
     Uri,
     parse,
-    InvalidUriException
+    InvalidUriException,
+    Parameter,
+    parseParameter
 }
 import java.lang {
     Thread
@@ -586,18 +592,50 @@ shared class Response(major, minor, status, reason, fullHeaders, body, resends) 
     shared String reason;
     shared Map<String,List<String>> fullHeaders;
     "Will be empty if the body has been sent to a chunkReceiver instead of being buffered."
-    shared ByteBuffer body;
+    shared ByteBuffer body; // TODO immutablity?
     shared List<Resend> resends;
     
     shared [Integer, Integer] http_version = [major, minor];
     shared Integer bodySize = body.capacity;
-    // TODO "view" of fullHeaders with only one value (first?), see Map.patch for impl. example
-    shared Map<String,String> headers = nothing;
+    shared Charset bodyCharset = utf8; // TODO pass through from Proto?
+    shared Map<String,String> headers {
+        String mapping(String key, List<String> item) {
+            if (exists val = item.first) {
+                return val;
+            } else {
+                return ""; // mapItems doesn't let us return null...
+            }
+        }
+        // TODO cache?
+        return fullHeaders.mapItems(mapping);
+    }
     
-    // TODO lazy JsonValue, parse from body transparently.
-    shared Anything bodyJson => nothing;
-    // TODO lazy, parse from body transparently
-    shared String bodyText => nothing;
-    // TODO lazy, parse from body transparently
-    shared Parameters bodyParameters => nothing;
+    shared String bodyText {
+        body.position = 0;
+        // TODO cache?
+        return bodyCharset.decode(body);
+    }
+    shared JsonValue bodyJson {
+        // TODO json module probably could be updated to have a charset tokenizer to use body ByteBuffer directly?
+        // TODO cache? are all JsonValues immutable?
+        return jsonParse(bodyText);
+    }
+    shared List<Parameter> bodyFullParameters {
+        value paramList = LinkedList<Parameter>();
+        for (param in bodyText.split((Character ch) => ch == '&', true, false)) {
+            paramList.add(parseParameter(param));
+        }
+        // TODO cache/return as unmodifiableList?
+        return paramList;
+    }
+    shared Map<String,String> bodyParameters {
+        value paramMap = HashMap<String,String>();
+        for (param in bodyFullParameters) {
+            if (exists val = param.val) {
+                paramMap.put(param.name, val);
+            }
+        }
+        // TODO cache/return as unmodifiableMap?
+        return paramMap;
+    }
 }
