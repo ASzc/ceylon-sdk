@@ -2,7 +2,7 @@ shared String passthroughValidator(String candidate) {
     return candidate;
 }
 
-shared abstract class Argument<Result>()
+shared abstract class Argument<out Result>()
 //of Flag | Optional | Positional {
 {
     shared formal Result result;

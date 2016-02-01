@@ -22,11 +22,11 @@ shared String moduleDescription(Module mod) {
 }
 
 "Create about text with [[verboseAbout]] using information from a module"
-shared String(Command) moduleAbout(mod, authors = true, description = false) {
+shared String(Command<Results,SubResults>) moduleAbout<Results,SubResults>(mod, authors = true, description = false) {
     Module mod;
     Boolean authors;
     Boolean description;
-    return verboseAbout {
+    return verboseAbout<Results,SubResults> {
         version = mod.version;
         authors = if (authors) then moduleAuthors(mod) else empty;
         description = if (description) then moduleDescription(mod) else "";
@@ -53,10 +53,10 @@ shared String(Command) moduleAbout(mod, authors = true, description = false) {
    from the given [[version]], [[authors]] and [[description]] text.
    [[minimalAbout]] provides the initial text.
    """
-shared String verboseAbout
+shared String verboseAbout<Results,SubResults>
         (String version, {String*} authors, String description)
-        (Command command) {
-    String initial = minimalAbout(command);
+        (Command<Results,SubResults> command) {
+    String initial = minimalAbout<Results,SubResults>(command);
     return String(
         initial.chain(" ").chain(version).chain("\n")
             .chain("".join(authors)).chain("\n")
@@ -65,7 +65,7 @@ shared String verboseAbout
 }
 
 "Return [[Command.name]]"
-shared String minimalAbout(Command command) {
+shared String minimalAbout<Results,SubResults>(Command<Results,SubResults> command) {
     return command.name;
 }
 
@@ -73,7 +73,7 @@ shared String minimalAbout(Command command) {
  * Usage
  */
 
-shared String standardUsage(Command command) {
+shared String standardUsage<Results,SubResults>(Command<Results,SubResults> command) {
     return nothing;
 }
 
@@ -81,13 +81,13 @@ shared String standardUsage(Command command) {
  * Help
  */
 
-shared String standardHelp(Command command) {
+shared String standardHelp<Results,SubResults>(Command<Results,SubResults> command) {
     return nothing;
 }
 
 see (`function moduleDescription`)
-shared String standardHelpWithDescription
+shared String standardHelpWithDescription<Results,SubResults>
         (String before = "", String after = "")
-        (Command command) {
+        (Command<Results,SubResults> command) {
     return nothing;
 }
