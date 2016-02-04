@@ -1,23 +1,34 @@
 void asd() {
     value app = Application {
-        name="helloworld";
-        arguments={
+        name = "helloworld";
+        arguments = {
             Flag {
-                name="moshimoshi";
+                name = "moshimoshi";
                 validator = (Integer count) => count > 0;
             },
             Optional {
-                name="hej";
+                name = "hej";
                 validator = ({String*} values) => values.size;
             }
         };
-        subcommands={
-            Subcommand{
-                name="goodbye";
-                arguments={
+        subcommands = {
+            Subcommand {
+                name = "goodbye";
+                arguments = {
                     Positional {
                         name = "farewell";
                         validator = ({String+} values) => "".join(values);
+                    }
+                };
+                subcommands = {
+                    Subcommand {
+                        name = "meh";
+                        arguments = {
+                            Flag {
+                                name = "mleh";
+                                validator = (Integer count) => count;
+                            }
+                        };
                     }
                 };
             }
@@ -31,14 +42,14 @@ void asd() {
     if (is Integer hej = results["hej"]) {
         print(hej);
     }
-    if (is Map<String, Anything> goodbye = results["goodbye"]) {
+    if (is Map<String,Anything> goodbye = results["goodbye"]) {
         if (is String farewell = goodbye["hej"]) {
             print(farewell);
         }
     }
 }
 
-shared abstract class Command<Results,SubResults>(
+shared abstract class Command<Results, SubResults>(
     name,
     about = minimalAbout<Results,SubResults>,
     usage = standardUsage<Results,SubResults>,
@@ -78,7 +89,7 @@ shared abstract class Command<Results,SubResults>(
     }
 }
 
-shared class Application<Results,SubResults>(
+shared class Application<Results, SubResults>(
     name,
     about = minimalAbout<Results,SubResults>,
     usage = standardUsage<Results,SubResults>,
@@ -131,7 +142,7 @@ shared class Application<Results,SubResults>(
     }
 }
 
-shared class Subcommand<Results,SubResults>(
+shared class Subcommand<Results, SubResults>(
     name,
     about = "",
     usage = standardUsage<Results,SubResults>,
